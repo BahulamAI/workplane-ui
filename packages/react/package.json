@@ -1,0 +1,35 @@
+{
+  "name": "@bahulam/workplane-react",
+  "version": "0.1.0",
+  "description": "Workplane React reference shell: provider, hooks, unstyled primitives, native block catalog, and presenters",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": ["*.css"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b && cp src/styles.css dist/styles.css",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "react": "^18.3.0 || ^19.0.0",
+    "react-dom": "^18.3.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@bahulam/workplane-core": "workspace:*",
+    "@bahulam/workplane-data": "workspace:*",
+    "@bahulam/workplane-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.2"
+  }
+}

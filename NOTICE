@@ -1,0 +1,17 @@
+Workplane
+Copyright 2026 Bahulam and the Workplane contributors
+
+This product includes software developed at Bahulam (https://bahulam.ai/).
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Workplane is host-independent. Running it requires no Bahulam account,
+cloud gateway, hosted model, or telemetry endpoint.
+
+Optional adapters depend on third-party software distributed under its own
+licence and service terms. The project licence does not change those terms.
+Notable cases requiring separate review before redistribution or use:
+
+  - Apache ECharts (Apache-2.0)      packages/renderer-echarts, peer dependency
+  - Remotion (source-available)      not bundled; review licence before use
+  - Map / BI provider SDKs           vendor terms and entitlements apply

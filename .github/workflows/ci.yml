@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      # Keeps "headless" honest: one stray import is invisible in review.
+      - run: pnpm lint:boundaries
+      - run: pnpm --filter @bahulam/workplane-example-generative-bi run build
+
+  packed:
+    # A standalone example must build from PACKED packages, not only through
+    # workspace source aliases, so a missing stylesheet, schema file, or type
+    # declaration cannot be hidden by local linking.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Pack every published package and inspect its contents
+        run: |
+          mkdir -p /tmp/packed
+          for pkg in protocol core data react renderer-echarts testkit; do
+            tarball=$(cd "packages/$pkg" && pnpm pack --pack-destination /tmp/packed | tail -1)
+            echo "=== $pkg ==="
+            tar -tzf "$tarball"
+            # Type declarations and JS must both ship.
+            tar -tzf "$tarball" | grep -q 'dist/index.d.ts' || { echo "MISSING types in $pkg"; exit 1; }
+            tar -tzf "$tarball" | grep -q 'dist/index.js'   || { echo "MISSING js in $pkg"; exit 1; }
+          done
+          # The React package must ship its stylesheet, which tsc does not emit.
+          tar -tzf /tmp/packed/*workplane-react*.tgz | grep -q 'dist/styles.css' \
+            || { echo "MISSING styles.css in react package"; exit 1; }
