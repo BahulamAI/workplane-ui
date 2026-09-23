@@ -4,7 +4,7 @@ Every public API change, document schema change, command semantics change,
 security boundary change, or new mandatory dependency needs an ADR here plus
 conformance fixtures, per [GOVERNANCE.md](../../GOVERNANCE.md).
 
-## Decisions carried from PRD-WP-001
+## Decisions carried from PRD-108
 
 These were decided in the PRD and are implemented or reserved as noted. They
 are listed rather than restated; write a full ADR when one is **revisited**.
@@ -21,6 +21,7 @@ are listed rather than restated; write a full ADR when one is **revisited**.
 | ADR-WP-008 | Scene browsing and revision history are distinct navigation domains | reserved (M3) |
 | ADR-WP-009 | Manim is a job/artifact integration, not the UI runtime | reserved (M4) |
 | ADR-WP-010 | Optional protocols and vendor integrations never become mandatory | implemented — enforced by `pnpm lint:boundaries` |
+| ADR-WP-011 | Typed graph over stable addresses for hierarchy and cross-component references | **pending** — see PRD-108 section 27 |
 
 ## Open items
 
@@ -39,7 +40,21 @@ signed off. They are open:
 
 PRD section 10.3 lists structure components — card, stack, responsive grid —
 but the document model in section 8.1 gives a `Block` no way to reference
-child blocks. A2UI solves the same problem with child references by id. A
-structure block currently has nothing to contain. This needs a decision before
-those components are built: either add child references to `Block`, or drop
-the structure row from the catalog and let scene layout carry it.
+other blocks. A structure block currently has nothing to contain.
+
+**Resolution in progress.** PRD-108 section 27 proposes a typed graph over
+stable node addresses rather than a bare child reference, because the document
+already expresses six kinds of relationship in six ad-hoc shapes: containment
+(`scene.blockOrder`), data dependency (`block.dataRefs`), state dependency
+(`block.bindings`), query derivation (runtime only), cross-highlighting (a
+renderer-spec convention), and artifact provenance (a one-off field).
+
+Unifying them gives `contains` for hierarchy, `reads` / `binds` for
+dependency, `about` for entity grounding, `filters` / `highlights` for
+section 13.2's explicit selection mapping, and `explains` / `produced-by` for
+section 13.6 staleness and section 12.3 tracing.
+
+Staged G0–G4 in the PRD. **G1 alone — `contains` edges plus `childOrder`,
+migrating `blockOrder` — closes this gap** and unblocks the structure catalog.
+This is a `workplane/1` → `workplane/2` schema change and needs ADR-WP-011
+plus migration fixtures on both sides before any of it lands.
