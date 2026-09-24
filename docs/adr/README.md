@@ -22,6 +22,7 @@ are listed rather than restated; write a full ADR when one is **revisited**.
 | ADR-WP-009 | Manim is a job/artifact integration, not the UI runtime | reserved (M4) |
 | ADR-WP-010 | Optional protocols and vendor integrations never become mandatory | implemented — enforced by `pnpm lint:boundaries` |
 | ADR-WP-011 | Typed graph over stable addresses for hierarchy and cross-component references | **pending** — see PRD-108 section 27 |
+| ADR-WP-012 | Who owns a renderer's visual grammar — ours, or the engine's | **proposed** — see [ADR-WP-012](ADR-WP-012-renderer-spec-ownership.md) |
 
 ## Open items
 
