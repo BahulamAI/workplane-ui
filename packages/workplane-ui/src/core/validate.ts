@@ -136,8 +136,40 @@ export function validateDocument(
         `Block "${blockId}" is claimed by ${ownedBy.length} scenes (${ownedBy.join(", ")}); a block belongs to one scene`,
       );
     }
-    if (block.title.length > limits.maxTitleLength) {
+    // PRD section 8.1 requires these. Without the check, a block could be
+    // committed with no renderer at all — which happened: an agent sent
+    // widget-shaped blocks {id, type, title, value, data} to block.add, the
+    // fields it did not recognise became undefined, and the document accepted
+    // three blocks that nothing could ever render.
+    if (typeof block.kind !== "string" || block.kind.length === 0) {
+      fail(`/blocks/${blockId}/kind`, 'Block requires a non-empty "kind"');
+    }
+    if (typeof block.title !== "string") {
+      fail(`/blocks/${blockId}/title`, 'Block requires a "title" string');
+    } else if (block.title.length > limits.maxTitleLength) {
       fail(`/blocks/${blockId}/title`, `Block title exceeds ${limits.maxTitleLength} characters`);
+    }
+    if (typeof block.rendererId !== "string" || !/^[a-z0-9]+\.[a-z0-9-]+$/i.test(block.rendererId)) {
+      fail(
+        `/blocks/${blockId}/rendererId`,
+        'Block requires a namespaced "rendererId" such as "workplane.table". ' +
+          "A block without one can never be rendered.",
+      );
+    }
+    if (typeof block.specVersion !== "string" || block.specVersion.length === 0) {
+      fail(`/blocks/${blockId}/specVersion`, 'Block requires a non-empty "specVersion"');
+    }
+    if (block.spec === undefined) {
+      fail(`/blocks/${blockId}/spec`, 'Block requires a "spec", even if it is an empty object');
+    }
+    if (typeof block.fallback !== "string") {
+      fail(`/blocks/${blockId}/fallback`, 'Block requires "fallback" text for when its renderer is unavailable');
+    }
+    if (!Array.isArray(block.dataRefs)) {
+      fail(`/blocks/${blockId}/dataRefs`, '"dataRefs" must be an array of query ids');
+    }
+    if (!block.bindings || typeof block.bindings !== "object" || Array.isArray(block.bindings)) {
+      fail(`/blocks/${blockId}/bindings`, '"bindings" must be an object');
     }
     const depth = depthOf(block.spec);
     if (depth > limits.maxSpecDepth) {
@@ -147,12 +179,12 @@ export function validateDocument(
     if (size > limits.maxSpecBytes) {
       fail(`/blocks/${blockId}/spec`, `Spec is ${size} bytes, limit is ${limits.maxSpecBytes}`);
     }
-    for (const queryId of block.dataRefs) {
+    for (const queryId of Array.isArray(block.dataRefs) ? block.dataRefs : []) {
       if (!document.queries[queryId]) {
         fail(`/blocks/${blockId}/dataRefs`, `dataRefs references unknown query "${queryId}"`);
       }
     }
-    for (const [name, binding] of Object.entries(block.bindings)) {
+    for (const [name, binding] of Object.entries(block.bindings ?? {})) {
       if (binding.path !== "" && !binding.path.startsWith("/")) {
         fail(
           `/blocks/${blockId}/bindings/${name}`,

@@ -177,11 +177,38 @@ export class LocalAuthority implements CommandGateway {
     const next: WorkplaneDocument = { ...candidate, revision };
     const validation = validateDocument(next, this.#limits);
     if (!validation.ok) {
-      const first = validation.violations[0] as { path: string; message: string };
-      return fail("VALIDATION_FAILED", first.message, {
-        path: first.path,
-        detail: { violations: validation.violations.length },
-      });
+      // Reject only violations this transaction INTRODUCES.
+      //
+      // A document that already contains an invalid block would otherwise be
+      // permanently frozen: every future commit fails on a defect it did not
+      // cause, including the commit that would remove it. So the rule is that a
+      // transaction may not make the document less valid — which still blocks
+      // new corruption, while leaving a repair path open.
+      const before = validateDocument(document, this.#limits);
+      const existing = new Set(
+        before.ok ? [] : before.violations.map((v) => `${v.path}::${v.message}`),
+      );
+      const introduced = validation.violations.filter(
+        (v) => !existing.has(`${v.path}::${v.message}`),
+      );
+      if (introduced.length > 0) {
+        const first = introduced[0] as { path: string; message: string };
+        // Report EVERY introduced violation, not just the first. An agent
+        // repairing one field at a time burns a round trip per field, and PRD
+        // section 11.5 asks for bounded repair attempts.
+        const summary = introduced
+          .slice(0, 10)
+          .map((v) => `${v.path}: ${v.message}`)
+          .join(" | ");
+        return fail("VALIDATION_FAILED", first.message, {
+          path: first.path,
+          detail: {
+            violations: introduced.length,
+            preExisting: existing.size,
+            all: introduced.length > 10 ? `${summary} | …and ${introduced.length - 10} more` : summary,
+          },
+        });
+      }
     }
 
     const event: CommittedEvent = {
