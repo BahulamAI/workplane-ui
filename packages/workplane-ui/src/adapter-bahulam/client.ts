@@ -19,7 +19,13 @@ export interface BahulamClientOptions {
   plugin: string;
   /** Defaults to the origin the view was served from. */
   baseUrl?: string;
-  /** Session token, when the host requires one on the event stream. */
+  /**
+   * Local workspace access token. The local service authorises EVERY request,
+   * so this is required in practice, not optional.
+   *
+   * Omit it and `fromLocation()` reads it from the panel's own URL, which is
+   * where the host puts it.
+   */
   token?: string;
   fetchImpl?: typeof fetch;
 }
@@ -43,6 +49,20 @@ export class BahulamClient {
   readonly #token: string | undefined;
   readonly #fetch: typeof fetch;
 
+  /**
+   * Build a client from the panel's own URL, the way a plugin view is loaded:
+   * `/plugin-view/<plugin>/<file>?token=...`.
+   */
+  static fromLocation(plugin: string, overrides: Partial<BahulamClientOptions> = {}): BahulamClient {
+    let token = "";
+    try {
+      token = new URLSearchParams(location.search).get("token") ?? "";
+    } catch {
+      /* no location, e.g. under test */
+    }
+    return new BahulamClient({ plugin, token, ...overrides });
+  }
+
   constructor(options: BahulamClientOptions) {
     this.plugin = options.plugin;
     this.#baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
@@ -54,13 +74,19 @@ export class BahulamClient {
     return `${this.#baseUrl}${path}`;
   }
 
+  #authHeaders(): Record<string, string> {
+    return this.#token ? { "x-bahulam-local-token": this.#token } : {};
+  }
+
   async #post<T>(path: string, body: unknown): Promise<T> {
     const response = await this.#fetch(this.#url(path), {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        // Header, never a query string: a token in a URL ends up in logs.
-        ...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
+        // The header the local service actually checks. A query-string token
+        // would also work but ends up in logs, so prefer the header wherever
+        // the API allows one.
+        ...this.#authHeaders(),
       },
       body: JSON.stringify(body),
     });
@@ -103,7 +129,7 @@ export class BahulamClient {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
+        ...this.#authHeaders(),
       },
       body: JSON.stringify({ name, args }),
     });
@@ -162,7 +188,7 @@ export class BahulamClient {
     try {
       const response = await this.#fetch(
         this.#url(`/api/workplane/${encodeURIComponent(this.plugin)}`),
-        { method: "GET", headers: this.#token ? { authorization: `Bearer ${this.#token}` } : {} },
+        { method: "GET", headers: this.#authHeaders() },
       );
       return response.status !== 404;
     } catch {
@@ -171,9 +197,7 @@ export class BahulamClient {
   }
 
   async get<T>(path: string): Promise<T> {
-    const response = await this.#fetch(this.#url(path), {
-      headers: this.#token ? { authorization: `Bearer ${this.#token}` } : {},
-    });
+    const response = await this.#fetch(this.#url(path), { headers: this.#authHeaders() });
     const payload = (await response.json().catch(() => ({}))) as {
       ok?: boolean;
       result?: T;
