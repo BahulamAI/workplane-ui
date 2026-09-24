@@ -88,6 +88,22 @@ importers:
         specifier: ^6.0.5
         version: 6.4.3(@types/node@22.20.4)
 
+  packages/adapter-bahulam:
+    dependencies:
+      '@bahulam/workplane-core':
+        specifier: workspace:*
+        version: link:../core
+      '@bahulam/workplane-data':
+        specifier: workspace:*
+        version: link:../data
+      '@bahulam/workplane-protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/core:
     dependencies:
       '@bahulam/workplane-data':

@@ -30,7 +30,16 @@ signed off. They are open:
 
 - Named owners for core/authority, React UX, Bahulam integration, data
   semantics, and security — see the table in [GOVERNANCE.md](../../GOVERNANCE.md).
-- npm scope and repository ownership.
+- ~~npm scope and repository ownership.~~ **Resolved 2026-09-24:** keep the
+  `@bahulam/workplane-*` names. The neutral `workplane` package and the
+  `@workplane` scope are held by an unrelated active project
+  (`sylonzero`, v0.4.3, "durable execution plane for routing work across
+  trusted nodes"), so the neutral scope PRD section 7.1 hoped for is not
+  obtainable. `workplane-ui` and `workplane-core` are free and were
+  considered; the vendor scope was kept because we verifiably own `@bahulam`,
+  nothing under it can be squatted, and no Bahulam name appears in any UI,
+  runtime, document, or export — only in the import specifier. Branding does
+  not affect host independence.
 - Source licence clearance for anything vendored later.
 - Supported browser baseline. The bundle budgets are measured
   (`tests/benchmarks`); the browser matrix is not yet.

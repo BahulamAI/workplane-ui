@@ -1,11 +1,26 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/protocol" },
-    { "path": "packages/core" },
-    { "path": "packages/data" },
-    { "path": "packages/react" },
-    { "path": "packages/renderer-echarts" },
-    { "path": "packages/testkit" }
+    {
+      "path": "packages/protocol"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/data"
+    },
+    {
+      "path": "packages/react"
+    },
+    {
+      "path": "packages/renderer-echarts"
+    },
+    {
+      "path": "packages/testkit"
+    },
+    {
+      "path": "packages/adapter-bahulam"
+    }
   ]
 }

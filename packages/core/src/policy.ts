@@ -1,30 +1,35 @@
-import { parsePointer, type Actor, type JsonValue, type Operation } from "@bahulam/workplane-protocol";
-
-export type WritableType = "string" | "number" | "integer" | "boolean" | "string[]";
+import { parsePointer, type Actor, type Operation } from "@bahulam/workplane-protocol";
+import {
+  DEFAULT_VALUE_LIMITS,
+  describeSchema,
+  validateValue,
+  type ValueLimits,
+  type ValueSchema,
+} from "./schema.js";
 
 /**
- * A registered, typed write path within `shared`. Clients cannot write
- * arbitrary document roots; a path absent from this registry is rejected even
- * for an actor who may otherwise edit the document.
+ * A registered, typed write path within `shared`.
+ *
+ * Clients cannot write arbitrary document roots: a path absent from this
+ * registry is rejected even for an actor who may otherwise edit the document.
  *
  * `path` supports a single trailing `/*` wildcard for one dynamic segment,
  * e.g. `/selection/*` — not arbitrary glob nesting.
  */
 export interface WritablePath {
   path: string;
-  type: WritableType;
+  /** Host-authored schema. Objects and arrays are permitted, unlike v0.1. */
+  schema: ValueSchema;
   /** Capability an actor needs to write here. Omit for "any editor". */
   capability?: string;
-  min?: number;
-  max?: number;
-  /** Closed value set, for select-style inputs. */
-  enum?: readonly (string | number)[];
 }
 
 export interface DocumentPolicy {
   writablePaths: readonly WritablePath[];
   /** Structural edits (scene/block add, move, remove) require this. */
   structuralCapability?: string;
+  /** Bounds on untrusted values, independent of the schemas. */
+  valueLimits?: ValueLimits;
 }
 
 export interface PolicyDenial {
@@ -41,21 +46,6 @@ function matches(pattern: string, path: string): boolean {
   return rest.length > 0 && !rest.includes("/");
 }
 
-function typeOk(type: WritableType, value: JsonValue): boolean {
-  switch (type) {
-    case "string":
-      return typeof value === "string";
-    case "number":
-      return typeof value === "number" && Number.isFinite(value);
-    case "integer":
-      return typeof value === "number" && Number.isInteger(value);
-    case "boolean":
-      return typeof value === "boolean";
-    case "string[]":
-      return Array.isArray(value) && value.every((v) => typeof v === "string");
-  }
-}
-
 /**
  * Authorize one transaction's operations against the document policy.
  *
@@ -70,11 +60,20 @@ export function authorizeOperations(
 ): PolicyDenial[] {
   const denials: PolicyDenial[] = [];
   const held = new Set(actor.capabilities);
+  const limits = policy.valueLimits ?? DEFAULT_VALUE_LIMITS;
 
   operations.forEach((operation, index) => {
     const path = `/operations/${index}`;
 
     if (operation.op === "state.set") {
+      // A malformed pointer is a validation failure, not a silent no-op.
+      try {
+        parsePointer(operation.path);
+      } catch (error) {
+        denials.push({ path: `${path}/path`, message: (error as Error).message });
+        return;
+      }
+
       const rule = policy.writablePaths.find((w) => matches(w.path, operation.path));
       if (!rule) {
         denials.push({
@@ -90,34 +89,15 @@ export function authorizeOperations(
         });
         return;
       }
-      if (!typeOk(rule.type, operation.value)) {
+
+      const validation = validateValue(rule.schema, operation.value, limits);
+      if (!validation.ok) {
+        const first = validation.violations[0] as { path: string; message: string };
         denials.push({
-          path: `${path}/value`,
-          message: `"${operation.path}" is typed ${rule.type}`,
+          // Point at the offending field inside the value, not just the write.
+          path: `${path}/value${first.path}`,
+          message: first.message,
         });
-        return;
-      }
-      if (typeof operation.value === "number") {
-        if (rule.min !== undefined && operation.value < rule.min) {
-          denials.push({ path: `${path}/value`, message: `Value is below the minimum ${rule.min}` });
-        }
-        if (rule.max !== undefined && operation.value > rule.max) {
-          denials.push({ path: `${path}/value`, message: `Value is above the maximum ${rule.max}` });
-        }
-      }
-      if (rule.enum && (typeof operation.value === "string" || typeof operation.value === "number")) {
-        if (!rule.enum.includes(operation.value)) {
-          denials.push({
-            path: `${path}/value`,
-            message: `Value is not one of the permitted options for "${operation.path}"`,
-          });
-        }
-      }
-      // A malformed pointer is a validation failure, not a silent no-op.
-      try {
-        parsePointer(operation.path);
-      } catch (error) {
-        denials.push({ path: `${path}/path`, message: (error as Error).message });
       }
       return;
     }
@@ -132,4 +112,14 @@ export function authorizeOperations(
   });
 
   return denials;
+}
+
+/** Compact, non-sensitive description of the write surface, for agent context. */
+export function describeWritablePaths(
+  policy: DocumentPolicy,
+): Array<{ path: string; schema: string }> {
+  return policy.writablePaths.map((rule) => ({
+    path: rule.path,
+    schema: describeSchema(rule.schema),
+  }));
 }

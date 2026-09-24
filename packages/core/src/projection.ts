@@ -1,6 +1,6 @@
 import { getPointer, type JsonObject, type JsonValue } from "@bahulam/workplane-protocol";
 import type { WorkplaneDocument } from "./document.js";
-import type { DocumentPolicy } from "./policy.js";
+import { describeWritablePaths, type DocumentPolicy } from "./policy.js";
 
 export interface AgentContext {
   documentId: string;
@@ -10,7 +10,7 @@ export interface AgentContext {
   /** Committed filters and assumptions only — never a full dataset. */
   state: JsonObject;
   dataSources: Array<{ id: string; provider: string; resource: string; sourceVersion: string; sensitivity: string }>;
-  writablePaths: Array<{ path: string; type: string }>;
+  writablePaths: Array<{ path: string; schema: string }>;
   recentChanges: Array<{ revision: number; actor: string; summary: string }>;
   truncated: boolean;
 }
@@ -92,7 +92,7 @@ export function projectForAgent(
       sourceVersion: source.sourceVersion,
       sensitivity: source.sensitivity,
     })),
-    writablePaths: options.policy.writablePaths.map((w) => ({ path: w.path, type: w.type })),
+    writablePaths: describeWritablePaths(options.policy),
     recentChanges: options.recentChanges ?? [],
     truncated: false,
   };

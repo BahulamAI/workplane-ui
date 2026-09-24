@@ -17,11 +17,42 @@ export const DEMO_DOCUMENT_ID = "wp_azure_demo";
 export const DEMO_POLICY: DocumentPolicy = {
   structuralCapability: "workplane.edit",
   writablePaths: [
-    { path: "/filters/period", type: "string", enum: [...PERIODS] },
-    { path: "/filters/environment", type: "string", enum: [...ENVIRONMENTS, "all"] },
-    { path: "/selection/services", type: "string[]" },
-    { path: "/assumptions/eligibleSharePercent", type: "number", min: 0, max: 100 },
-    { path: "/assumptions/reductionPercent", type: "number", min: 0, max: 100 },
+    { path: "/filters/period", schema: { type: "string", enum: [...PERIODS] } },
+    { path: "/filters/environment", schema: { type: "string", enum: [...ENVIRONMENTS, "all"] } },
+    {
+      path: "/selection/services",
+      schema: { type: "array", items: { type: "string", maxLength: 64 }, maxItems: 50 },
+    },
+    {
+      path: "/assumptions/eligibleSharePercent",
+      schema: { type: "number", minimum: 0, maximum: 100 },
+    },
+    {
+      path: "/assumptions/reductionPercent",
+      schema: { type: "number", minimum: 0, maximum: 100 },
+    },
+    /**
+     * A nested write path. Scalar-only policies could not express this, which
+     * is why the schema language replaced the type enum: a filter criterion is
+     * an object, and it still has to be validated field by field at the
+     * authority rather than trusted because it parsed as JSON.
+     */
+    {
+      path: "/filters/criteria",
+      schema: {
+        type: "array",
+        maxItems: 20,
+        items: {
+          type: "object",
+          required: ["dimension", "operator", "values"],
+          properties: {
+            dimension: { type: "string", enum: ["service", "environment", "period"] },
+            operator: { type: "string", enum: ["in", "not-in"] },
+            values: { type: "array", items: { type: "string", maxLength: 64 }, maxItems: 25 },
+          },
+        },
+      },
+    },
   ],
 };
 
