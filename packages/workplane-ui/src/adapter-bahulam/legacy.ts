@@ -58,7 +58,12 @@ function isMoney(widget: LegacyWidget): boolean {
 
 function literalPoints(widget: LegacyWidget): Array<{ id: string; label: string; value: number }> {
   const money = isMoney(widget);
-  return (widget.data ?? []).map((point) => {
+  // Defensive: `data` arrives from an agent and is not guaranteed to be an
+  // array, let alone an array of {label, value}. Import must never throw on odd
+  // input — a hostile or merely creative widget cannot be allowed to take the
+  // whole panel down.
+  const points = Array.isArray(widget.data) ? widget.data : [];
+  return points.map((point) => {
     const label = String(point?.label ?? "");
     return {
       // Stable id derived from the label — the only identity a legacy widget has.
@@ -81,6 +86,131 @@ function literalPoints(widget: LegacyWidget): Array<{ id: string; label: string;
  * text: a legacy widget has no query to re-run, and pretending otherwise would
  * imply a freshness the data does not have.
  */
+
+export interface WidgetProblem {
+  widgetId: string;
+  message: string;
+  expected: string;
+}
+
+/** What each widget type actually requires, stated once. */
+const WIDGET_SHAPES: Record<string, string> = {
+  metric: '{ id, type: "metric", title, value: <number>, format?: "currency", currency? }',
+  bar_chart: '{ id, type: "bar_chart", title, data: [{ label: <string>, value: <number> }], format?, currency? }',
+  line_chart: '{ id, type: "line_chart", title, data: [{ label: <string>, value: <number> }], format?, currency? }',
+  donut_chart: '{ id, type: "donut_chart", title, data: [{ label: <string>, value: <number> }], format?, currency? }',
+  table: '{ id, type: "table", title, columns: [<string>], rows: [[<cell>]], format?: { "<columnIndex>": "currency" }, currency? }',
+  alert: '{ id, type: "alert", title, message: <string>, tone?: "success"|"warning"|"danger" }',
+};
+
+/**
+ * Check a widget against the shape its type requires.
+ *
+ * This exists because the runtime previously validated only `id` and `type`,
+ * so anything else was accepted unchecked — an agent could invent
+ * `data: [{ label, points: [...] }]` for a line chart, be told it succeeded,
+ * and produce a widget nothing could render. Reporting the expected shape is
+ * what lets an agent repair its own proposal instead of guessing.
+ */
+export function validateLegacyWidget(widget: unknown): WidgetProblem | null {
+  if (!widget || typeof widget !== "object" || Array.isArray(widget)) {
+    return { widgetId: "(unknown)", message: "widget must be an object", expected: "{ id, type, ... }" };
+  }
+  const w = widget as Record<string, unknown>;
+  const id = typeof w.id === "string" ? w.id : "(missing id)";
+  const type = typeof w.type === "string" ? w.type : "";
+
+  const expected = WIDGET_SHAPES[type];
+  if (!expected) {
+    return {
+      widgetId: id,
+      message: `unsupported widget type ${JSON.stringify(type || null)}`,
+      expected: `one of: ${Object.keys(WIDGET_SHAPES).join(", ")}`,
+    };
+  }
+
+  const points = (): WidgetProblem | null => {
+    if (!Array.isArray(w.data)) {
+      return { widgetId: id, message: '"data" must be an array of points', expected };
+    }
+    for (const [index, point] of w.data.entries()) {
+      if (!point || typeof point !== "object" || Array.isArray(point)) {
+        return { widgetId: id, message: `data[${index}] must be an object`, expected };
+      }
+      const p = point as Record<string, unknown>;
+      if (typeof p.label !== "string") {
+        return { widgetId: id, message: `data[${index}].label must be a string`, expected };
+      }
+      if (typeof p.value !== "number" || !Number.isFinite(p.value)) {
+        // The most common mistake: a formatted string, or a nested series.
+        return {
+          widgetId: id,
+          message: `data[${index}].value must be a finite number, not ${
+            Array.isArray(p.value) ? "an array" : typeof p.value
+          }. Send raw numbers; formatting is applied for you.`,
+          expected,
+        };
+      }
+    }
+    return null;
+  };
+
+  switch (type) {
+    case "metric":
+      if (typeof w.value !== "number" || !Number.isFinite(w.value)) {
+        return {
+          widgetId: id,
+          message: `"value" must be a finite number, not ${Array.isArray(w.value) ? "an array" : typeof w.value}. ` +
+            "A metric shows ONE number; use a table for several.",
+          expected,
+        };
+      }
+      return null;
+    case "bar_chart":
+    case "line_chart":
+    case "donut_chart":
+      return points();
+    case "table": {
+      if (!Array.isArray(w.columns) || !w.columns.every((c) => typeof c === "string")) {
+        return { widgetId: id, message: '"columns" must be an array of strings', expected };
+      }
+      if (!Array.isArray(w.rows)) {
+        return {
+          widgetId: id,
+          message: '"rows" must be an array of arrays, one per row, aligned to "columns". ' +
+            "An array of objects is not accepted.",
+          expected,
+        };
+      }
+      for (const [index, row] of w.rows.entries()) {
+        if (!Array.isArray(row)) {
+          return { widgetId: id, message: `rows[${index}] must be an array of cells`, expected };
+        }
+        if (row.length !== w.columns.length) {
+          return {
+            widgetId: id,
+            message: `rows[${index}] has ${row.length} cells but there are ${w.columns.length} columns`,
+            expected,
+          };
+        }
+      }
+      return null;
+    }
+    case "alert":
+      if (typeof w.message !== "string") {
+        return { widgetId: id, message: '"message" must be a string', expected };
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** The expected shape for every supported widget type, for tool descriptions. */
+export function widgetShapes(): Record<string, string> {
+  return { ...WIDGET_SHAPES };
+}
+
 /**
  * Map ONE legacy widget onto a block.
  *

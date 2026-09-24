@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importLegacyWorkplane } from "@bahulam/workplane-ui/bahulam";
+import { importLegacyWorkplane, validateLegacyWidget } from "@bahulam/workplane-ui/bahulam";
 import { createNativeRegistry } from "@bahulam/workplane-ui/react";
 import { echartsRenderer } from "@bahulam/workplane-ui/echarts";
 
@@ -127,5 +127,69 @@ describe("legacy values survive the unit conversion", () => {
     // Unknown fields are dropped, not carried into the rendered option.
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(JSON.stringify(outcome.value)).not.toMatch(/formatter|fetch/);
+  });
+});
+
+describe("widget shape validation", () => {
+  /** The exact payload an agent produced when left to invent its own shapes. */
+  const invented = [
+    { id: "actual-chart", type: "line_chart", title: "Daily",
+      data: [{ label: "Actual (Daily)", points: [{ x: "Mar 29", y: 52 }] }] },
+    { id: "monthly-table", type: "table", title: "Monthly",
+      data: [{ month: "Aug 2026", daily_avg: "₹3,500" }] },
+    { id: "projection-summary", type: "metric", title: "Summary",
+      data: [{ label: "Run Rate", value: "₹3,000" }] },
+    { id: "ytd-context", type: "table", title: "Milestones",
+      data: [{ period: "Mar – Apr", notes: "Baseline" }] },
+  ];
+
+  it("rejects every one of them, with the expected shape attached", () => {
+    for (const widget of invented) {
+      const problem = validateLegacyWidget(widget);
+      expect(problem, `${widget.id} was accepted`).not.toBeNull();
+      expect(problem!.expected).toContain(widget.type);
+      expect(problem!.message.length).toBeGreaterThan(10);
+    }
+  });
+
+  it("names the actual mistake rather than a generic failure", () => {
+    expect(validateLegacyWidget(invented[2])!.message).toMatch(/metric shows ONE number/);
+    expect(validateLegacyWidget(invented[1])!.message).toMatch(/"columns" must be an array/);
+  });
+
+  it("rejects a formatted string where a number belongs", () => {
+    const problem = validateLegacyWidget({
+      id: "m", type: "metric", title: "T", value: "₹3,000",
+    });
+    expect(problem!.message).toMatch(/finite number, not string/);
+  });
+
+  it("catches a row that does not line up with its columns", () => {
+    const problem = validateLegacyWidget({
+      id: "t", type: "table", title: "T", columns: ["A", "B"], rows: [["only one"]],
+    });
+    expect(problem!.message).toMatch(/has 1 cells but there are 2 columns/);
+  });
+
+  it("accepts the corrected shapes", () => {
+    const corrected = [
+      { id: "c", type: "line_chart", title: "T", data: [{ label: "Mar", value: 52 }] },
+      { id: "t", type: "table", title: "T", columns: ["Month", "Total"], rows: [["Aug", 105000]] },
+      { id: "m", type: "metric", title: "T", value: 3000 },
+      { id: "a", type: "alert", title: "T", message: "over budget" },
+    ];
+    for (const widget of corrected) {
+      expect(validateLegacyWidget(widget), `${widget.id} was rejected`).toBeNull();
+    }
+  });
+
+  it("never throws while importing a widget with a non-array data field", () => {
+    // This crashed the import before: `(widget.data ?? []).map is not a function`.
+    expect(() =>
+      importLegacyWorkplane({
+        version: 1,
+        widgets: [{ id: "bad", type: "bar_chart", title: "T", data: { not: "an array" } as never }],
+      }),
+    ).not.toThrow();
   });
 });

@@ -3,6 +3,9 @@ export { HttpCommandGateway } from "./gateway.js";
 export {
   importLegacyWorkplane,
   legacyWidgetToBlock,
+  validateLegacyWidget,
+  widgetShapes,
+  type WidgetProblem,
   type LegacyWidget,
   type LegacyWorkplane,
 } from "./legacy.js";
