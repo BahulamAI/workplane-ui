@@ -40,11 +40,33 @@ const RENDERER_BY_TYPE: Record<string, string> = {
   alert: "workplane.text",
 };
 
-function literalRows(widget: LegacyWidget): Array<{ label: string; value: number }> {
-  return (widget.data ?? []).map((point) => ({
-    label: String(point?.label ?? ""),
-    value: Number(point?.value ?? 0),
-  }));
+/**
+ * Legacy widgets carry MAJOR units — `412.3` means $412.30. Every money value
+ * inside Workplane is integer minor units, so the conversion happens here, at
+ * the import boundary, exactly as the tool provider converts at the read
+ * boundary. Skipping it would turn $412.30 into $4.12.
+ */
+function toMinorUnits(amount: unknown, scale = 2): number {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 10 ** scale);
+}
+
+function isMoney(widget: LegacyWidget): boolean {
+  return widget.format === "currency" || widget.currency !== undefined;
+}
+
+function literalPoints(widget: LegacyWidget): Array<{ id: string; label: string; value: number }> {
+  const money = isMoney(widget);
+  return (widget.data ?? []).map((point) => {
+    const label = String(point?.label ?? "");
+    return {
+      // Stable id derived from the label — the only identity a legacy widget has.
+      id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || label,
+      label,
+      value: money ? toMinorUnits(point?.value) : Number(point?.value ?? 0),
+    };
+  });
 }
 
 /**
@@ -88,20 +110,41 @@ export function importLegacyWorkplane(
     let spec: Record<string, unknown>;
     switch (widget.type) {
       case "metric":
-        spec = { literal: widget.value ?? null, currency: widget.currency, format: widget.format };
+        spec = {
+          value: isMoney(widget) ? toMinorUnits(widget.value) : Math.round(Number(widget.value ?? 0)),
+          ...(widget.currency ? { currency: widget.currency } : {}),
+        };
         break;
       case "bar_chart":
       case "line_chart":
       case "donut_chart":
         spec = {
+          // donut has no renderer of its own yet; a bar of the same data is an
+          // honest substitute because the values and labels are identical.
           chartType: widget.type === "line_chart" ? "line" : "bar",
-          literal: literalRows(widget),
-          currency: widget.currency,
+          data: literalPoints(widget),
+          ...(widget.currency ? { currency: widget.currency } : {}),
         };
         break;
-      case "table":
-        spec = { columns: widget.columns ?? [], literal: widget.rows ?? [], currency: widget.currency };
+      case "table": {
+        const columns = widget.columns ?? [];
+        // `format` on a legacy table is a column-index -> format map.
+        const formats = (widget.format ?? {}) as Record<string, string>;
+        const moneyColumns = columns.filter((_, index) => formats[String(index)] === "currency");
+        const moneyIndexes = new Set(
+          columns.map((_, i) => i).filter((i) => formats[String(i)] === "currency"),
+        );
+        spec = {
+          columns,
+          rows: (widget.rows ?? []).map((row) =>
+            row.map((cell, index) => (moneyIndexes.has(index) ? toMinorUnits(cell) : String(cell ?? ""))),
+          ),
+          ...(moneyColumns.length ? { moneyColumns } : {}),
+          ...(widget.currency ? { currency: widget.currency } : {}),
+          pageSize: 12,
+        };
         break;
+      }
       case "alert":
         spec = { text: widget.message ?? "", generated: false, tone: widget.tone };
         break;

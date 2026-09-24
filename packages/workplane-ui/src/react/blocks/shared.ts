@@ -46,3 +46,41 @@ export function describeColumn(column: ResultColumn | undefined): string {
   }
   return parts.join(" · ");
 }
+
+/**
+ * Build a result from values carried in the spec itself, so a block with no
+ * query renders through exactly the same path as one with a query.
+ *
+ * Two cases need this. An imported legacy widget has literal numbers and no
+ * query to re-run. And an agent that computed something itself has nothing to
+ * point a `dataRef` at — the v0.1 operation set has no way to add a
+ * QueryDescriptor, so without this it could not chart its own findings at all.
+ *
+ * Inline results are marked `freshness: "unknown"` and carry generation 0:
+ * they are a snapshot, and nothing can refresh them.
+ */
+export function inlineResult(
+  blockId: string,
+  columns: ResultColumn[],
+  rows: JsonValue[][],
+): QueryResult {
+  return {
+    resultId: `inline_${blockId}`,
+    queryId: `inline:${blockId}`,
+    sourceVersion: "inline",
+    parameterFingerprint: "inline",
+    partition: "inline",
+    executedAt: new Date(0).toISOString(),
+    columns,
+    rows,
+    rowCount: rows.length,
+    rowCountIsEstimate: false,
+    freshness: "unknown",
+    generation: 0,
+  };
+}
+
+/** Money columns declared for inline data, which arrives already in minor units. */
+export function inlineMoneyColumn(name: string, currency = "USD"): ResultColumn {
+  return { name, type: "money", currency, aggregation: "sum" };
+}

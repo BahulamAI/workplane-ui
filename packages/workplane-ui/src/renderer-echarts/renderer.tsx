@@ -23,6 +23,7 @@ interface Point {
 function readPoints(result: QueryResult, spec: EChartsSpec): Point[] {
   const labelIndex = result.columns.findIndex((c) => c.name === spec.categoryColumn);
   const valueIndex = result.columns.findIndex((c) => c.name === spec.valueColumn);
+  if (spec.categoryColumn === undefined || spec.valueColumn === undefined) return [];
   const entityIndex = spec.entityColumn
     ? result.columns.findIndex((c) => c.name === spec.entityColumn)
     : labelIndex;
@@ -43,9 +44,18 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
   /** Suppresses the echo when we apply a selection programmatically. */
   const applyingRef = useRef(false);
 
-  const result = results.get(spec.queryId);
-  const points = useMemo(() => (result ? readPoints(result, spec) : []), [result, spec]);
-  const valueColumn = result?.columns.find((c) => c.name === spec.valueColumn);
+  const result = spec.source === "query" && spec.queryId ? results.get(spec.queryId) : undefined;
+  const points = useMemo<Point[]>(() => {
+    if (spec.source === "inline") {
+      return (spec.data ?? []).map((p) => ({ entityId: p.id ?? p.label, label: p.label, value: p.value }));
+    }
+    return result ? readPoints(result, spec) : [];
+  }, [result, spec]);
+
+  const valueColumn =
+    spec.source === "inline"
+      ? ({ name: "value", type: "money", currency: spec.currency ?? "USD" } as const)
+      : result?.columns.find((c) => c.name === spec.valueColumn);
   // The current selection arrives as a declared BINDING, not by reaching into
   // shared state. A renderer sees only what its block asked for.
   const selected = useMemo(() => {
@@ -136,7 +146,7 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
     };
   }, [points, spec, emit]);
 
-  if (!result) {
+  if (spec.source === "query" && !result) {
     return <div data-workplane="chart" data-state="loading" style={{ height: 240 }} />;
   }
 
@@ -151,8 +161,8 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
           <caption>{block.title}</caption>
           <thead>
             <tr>
-              <th scope="col">{spec.categoryColumn}</th>
-              <th scope="col">{spec.valueColumn}</th>
+              <th scope="col">{spec.categoryColumn ?? "label"}</th>
+              <th scope="col">{spec.valueColumn ?? "value"}</th>
             </tr>
           </thead>
           <tbody>
@@ -186,6 +196,9 @@ export const echartsRenderer: RendererDefinition<EChartsSpec> = {
     requiresWebGL: false,
   },
   validate: validateEChartsSpec,
-  summarize: (spec) => `${spec.chartType} chart of ${spec.valueColumn} by ${spec.categoryColumn}`,
+  summarize: (spec) =>
+    spec.source === "inline"
+      ? `${spec.chartType} chart (inline, ${spec.data?.length ?? 0} points)`
+      : `${spec.chartType} chart of ${spec.valueColumn} by ${spec.categoryColumn}`,
   Component: ChartComponent,
 };

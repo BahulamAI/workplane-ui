@@ -1,11 +1,30 @@
 import type { ValidationOutcome } from "../react/index.js";
 import type { JsonValue } from "../protocol/index.js";
 
+export interface InlinePoint {
+  /** Stable entity id. Falls back to the label when absent. */
+  id?: string;
+  label: string;
+  /** Integer minor units for money, a plain number otherwise. */
+  value: number;
+}
+
 export interface EChartsSpec {
   chartType: "bar" | "line";
-  queryId: string;
-  categoryColumn: string;
-  valueColumn: string;
+  /**
+   * Either a query reference or inline points.
+   *
+   * Inline exists because an agent has no way to add a QueryDescriptor in the
+   * v0.1 operation set, so without it an agent could only chart data the host
+   * had already declared — and an imported legacy widget, which carries literal
+   * values and no query, could not render at all.
+   */
+  source: "query" | "inline";
+  queryId?: string;
+  categoryColumn?: string;
+  valueColumn?: string;
+  data?: InlinePoint[];
+  currency?: string;
   /** Column holding the STABLE entity id, when it differs from the label. */
   entityColumn?: string;
   entityType?: string;
@@ -36,6 +55,42 @@ export function validateEChartsSpec(spec: unknown): ValidationOutcome<EChartsSpe
   if (typeof raw.chartType !== "string" || !CHART_TYPES.has(raw.chartType)) {
     return { ok: false, message: 'chartType must be "bar" or "line"', path: "/chartType" };
   }
+
+  const inline = raw.queryId === undefined && Array.isArray(raw.data);
+  if (inline) {
+    const points: InlinePoint[] = [];
+    const rawPoints = raw.data as unknown[];
+    if (rawPoints.length > 1000) {
+      return { ok: false, message: "Inline charts are limited to 1000 points", path: "/data" };
+    }
+    for (const [index, entry] of rawPoints.entries()) {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        return { ok: false, message: "Each point must be an object", path: `/data/${index}` };
+      }
+      const point = entry as Record<string, unknown>;
+      if (typeof point.label !== "string") {
+        return { ok: false, message: '"label" must be a string', path: `/data/${index}/label` };
+      }
+      if (typeof point.value !== "number" || !Number.isFinite(point.value)) {
+        return { ok: false, message: '"value" must be a finite number', path: `/data/${index}/value` };
+      }
+      points.push({
+        label: point.label,
+        value: point.value,
+        ...(typeof point.id === "string" ? { id: point.id } : {}),
+      });
+    }
+    const value: EChartsSpec = {
+      chartType: raw.chartType as EChartsSpec["chartType"],
+      source: "inline",
+      data: points,
+      selectionMode: "none",
+    };
+    if (typeof raw.currency === "string") value.currency = raw.currency;
+    if (typeof raw.entityType === "string") value.entityType = raw.entityType;
+    return { ok: true, value };
+  }
+
   for (const key of ["queryId", "categoryColumn", "valueColumn"]) {
     if (typeof raw[key] !== "string" || (raw[key] as string).length === 0) {
       return { ok: false, message: `"${key}" must be a non-empty string`, path: `/${key}` };
@@ -51,6 +106,7 @@ export function validateEChartsSpec(spec: unknown): ValidationOutcome<EChartsSpe
 
   const value: EChartsSpec = {
     chartType: raw.chartType as EChartsSpec["chartType"],
+    source: "query",
     queryId: raw.queryId as string,
     categoryColumn: raw.categoryColumn as string,
     valueColumn: raw.valueColumn as string,
