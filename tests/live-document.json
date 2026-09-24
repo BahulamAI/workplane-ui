@@ -1,0 +1,330 @@
+{
+  "schemaVersion": "workplane/1",
+  "id": "wp_azure_cost",
+  "revision": 10,
+  "title": "Azure cost investigation",
+  "sceneOrder": [
+    "overview",
+    "agent"
+  ],
+  "scenes": {
+    "overview": {
+      "id": "overview",
+      "title": "Cost overview",
+      "layout": "grid",
+      "blockOrder": [
+        "filters",
+        "total_metric",
+        "by_service",
+        "trend",
+        "dimension_table"
+      ],
+      "parameters": {}
+    },
+    "agent": {
+      "id": "agent",
+      "title": "Resource-type costs this month",
+      "layout": "grid",
+      "blockOrder": [
+        "rt-donut",
+        "rt-table"
+      ],
+      "parameters": {}
+    }
+  },
+  "blocks": {
+    "filters": {
+      "id": "filters",
+      "kind": "input.filters",
+      "title": "Filters",
+      "rendererId": "workplane.form",
+      "specVersion": "1",
+      "spec": {
+        "fields": [
+          {
+            "name": "days",
+            "label": "Look back (days)",
+            "control": "number",
+            "path": "/filters/days",
+            "min": 1,
+            "max": 365,
+            "step": 1
+          },
+          {
+            "name": "dimension",
+            "label": "Break down by",
+            "control": "select",
+            "path": "/filters/dimension",
+            "options": [
+              {
+                "value": "region",
+                "label": "Region"
+              },
+              {
+                "value": "resource_group",
+                "label": "Resource group"
+              },
+              {
+                "value": "tag",
+                "label": "Tag"
+              },
+              {
+                "value": "resource_type",
+                "label": "Resource type"
+              }
+            ]
+          }
+        ],
+        "submitLabel": "Apply"
+      },
+      "bindings": {},
+      "dataRefs": [],
+      "fallback": "Look-back window and breakdown dimension"
+    },
+    "total_metric": {
+      "id": "total_metric",
+      "kind": "content.metric",
+      "title": "Total spend",
+      "rendererId": "workplane.metric",
+      "specVersion": "1",
+      "spec": {
+        "queryId": "total_spend",
+        "column": "total"
+      },
+      "bindings": {},
+      "dataRefs": [
+        "total_spend"
+      ],
+      "fallback": "Total Azure spend over the selected window"
+    },
+    "by_service": {
+      "id": "by_service",
+      "kind": "analytics.chart",
+      "title": "Cost by service",
+      "rendererId": "workplane.echarts",
+      "specVersion": "1",
+      "spec": {
+        "chartType": "bar",
+        "queryId": "cost_by_service",
+        "categoryColumn": "service",
+        "entityColumn": "serviceId",
+        "valueColumn": "cost",
+        "entityType": "azure.service",
+        "selectionMode": "highlight",
+        "selectionPath": "/selection/services"
+      },
+      "bindings": {
+        "selection": {
+          "scope": "shared",
+          "path": "/selection/services"
+        }
+      },
+      "dataRefs": [
+        "cost_by_service"
+      ],
+      "fallback": "Bar chart of Azure cost by service"
+    },
+    "trend": {
+      "id": "trend",
+      "kind": "analytics.chart",
+      "title": "Daily trend",
+      "rendererId": "workplane.echarts",
+      "specVersion": "1",
+      "spec": {
+        "chartType": "line",
+        "queryId": "spend_trend",
+        "categoryColumn": "date",
+        "valueColumn": "cost"
+      },
+      "bindings": {},
+      "dataRefs": [
+        "spend_trend"
+      ],
+      "fallback": "Line chart of daily Azure spend"
+    },
+    "dimension_table": {
+      "id": "dimension_table",
+      "kind": "analytics.table",
+      "title": "Breakdown",
+      "rendererId": "workplane.table",
+      "specVersion": "1",
+      "spec": {
+        "queryId": "cost_by_dimension",
+        "columns": [
+          "name",
+          "cost"
+        ],
+        "pageSize": 12
+      },
+      "bindings": {},
+      "dataRefs": [
+        "cost_by_dimension"
+      ],
+      "fallback": "Table of Azure cost by the selected dimension"
+    },
+    "rt-donut": {
+      "id": "rt-donut",
+      "kind": "legacy.donut_chart",
+      "title": "Cost by resource type",
+      "rendererId": "workplane.echarts",
+      "specVersion": "1",
+      "spec": {
+        "chartType": "pie",
+        "data": [
+          {
+            "id": "microsoft-app-containerapps",
+            "label": "microsoft.app/containerapps",
+            "value": 5173448
+          },
+          {
+            "id": "microsoft-compute-virtualmachines",
+            "label": "microsoft.compute/virtualmachines",
+            "value": 2013639
+          },
+          {
+            "id": "microsoft-dbforpostgresql-flexibleservers",
+            "label": "microsoft.dbforpostgresql/flexibleservers",
+            "value": 676214
+          },
+          {
+            "id": "microsoft-storage-storageaccounts",
+            "label": "microsoft.storage/storageaccounts",
+            "value": 426629
+          }
+        ],
+        "currency": "INR"
+      },
+      "bindings": {},
+      "dataRefs": [],
+      "fallback": "Cost by resource type — published by the plugin agent"
+    },
+    "rt-table": {
+      "id": "rt-table",
+      "kind": "legacy.table",
+      "title": "Resource-type detail",
+      "rendererId": "workplane.table",
+      "specVersion": "1",
+      "spec": {
+        "columns": [
+          "Resource type",
+          "Cost"
+        ],
+        "rows": [
+          [
+            "microsoft.app/containerapps",
+            5173448
+          ],
+          [
+            "microsoft.compute/virtualmachines",
+            2013639
+          ],
+          [
+            "microsoft.dbforpostgresql/flexibleservers",
+            676214
+          ],
+          [
+            "microsoft.storage/storageaccounts",
+            426629
+          ]
+        ],
+        "moneyColumns": [
+          "Cost"
+        ],
+        "currency": "INR",
+        "pageSize": 12
+      },
+      "bindings": {},
+      "dataRefs": [],
+      "fallback": "Resource-type detail — published by the plugin agent"
+    }
+  },
+  "shared": {
+    "filters": {
+      "days": 30,
+      "dimension": "resource_group"
+    },
+    "selection": {
+      "services": []
+    }
+  },
+  "dataSources": {
+    "azure_costs": {
+      "id": "azure_costs",
+      "provider": "bahulam.plugin.azure-cost-analyzer",
+      "resource": "azure/cost-management",
+      "sourceVersion": "unknown",
+      "schema": {
+        "service": "string",
+        "cost": "number",
+        "date": "date",
+        "resource_type": "string"
+      },
+      "sensitivity": "confidential"
+    }
+  },
+  "queries": {
+    "total_spend": {
+      "id": "total_spend",
+      "dataSourceId": "azure_costs",
+      "spec": {
+        "measure": "cost",
+        "aggregation": "sum"
+      },
+      "parameters": {
+        "days": {
+          "scope": "shared",
+          "path": "/filters/days"
+        }
+      }
+    },
+    "cost_by_service": {
+      "id": "cost_by_service",
+      "dataSourceId": "azure_costs",
+      "spec": {
+        "measure": "cost",
+        "aggregation": "sum",
+        "dimension": "service"
+      },
+      "parameters": {
+        "days": {
+          "scope": "shared",
+          "path": "/filters/days"
+        }
+      }
+    },
+    "spend_trend": {
+      "id": "spend_trend",
+      "dataSourceId": "azure_costs",
+      "spec": {
+        "measure": "cost",
+        "aggregation": "sum",
+        "dimension": "date"
+      },
+      "parameters": {
+        "days": {
+          "scope": "shared",
+          "path": "/filters/days"
+        }
+      }
+    },
+    "cost_by_dimension": {
+      "id": "cost_by_dimension",
+      "dataSourceId": "azure_costs",
+      "spec": {
+        "measure": "cost",
+        "aggregation": "sum"
+      },
+      "parameters": {
+        "days": {
+          "scope": "shared",
+          "path": "/filters/days"
+        },
+        "dimension": {
+          "scope": "shared",
+          "path": "/filters/dimension"
+        }
+      }
+    }
+  },
+  "artifacts": {}
+}

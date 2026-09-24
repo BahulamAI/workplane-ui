@@ -19,6 +19,40 @@ function SceneNavigator(): React.ReactNode {
 
   if (sceneOrder.length < 2) return null;
 
+  /**
+   * Scroll explicitly rather than relying on the browser to honour the
+   * fragment.
+   *
+   * A plugin panel runs inside a sandboxed iframe, where `#fragment`
+   * navigation does not reliably move the view — the link looked correct, its
+   * target existed, and clicking it did nothing. The `href` is kept so the
+   * control is a real link: focusable, keyboard-activatable, and meaningful to
+   * open-in-new-tab and to assistive technology.
+   */
+  const go = useCallback(
+    (event: React.MouseEvent, sceneId: string) => {
+      // Let a modified click do what the user asked of the browser.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+      event.preventDefault();
+      controller.session.patchViewState({ activeSceneId: sceneId });
+
+      const target = globalThis.document?.getElementById(`scene-${sceneId}`);
+      if (!target) return;
+      target.scrollIntoView({
+        behavior: view.reducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      // An explicit navigation command moves focus to the scene heading, so a
+      // keyboard or screen-reader user lands where a sighted user is looking.
+      const heading = globalThis.document?.getElementById(`scene-heading-${sceneId}`);
+      if (heading) {
+        heading.setAttribute("tabindex", "-1");
+        heading.focus({ preventScroll: true });
+      }
+    },
+    [controller, view.reducedMotion],
+  );
+
   return (
     /* Ordinary links, not a tablist: these do not switch panels, they jump
        within one scrolling document. Mislabelling them as tabs would make the
@@ -30,7 +64,7 @@ function SceneNavigator(): React.ReactNode {
             <a
               href={`#scene-${sceneId}`}
               aria-current={view.activeSceneId === sceneId ? "true" : undefined}
-              onClick={() => controller.session.patchViewState({ activeSceneId: sceneId })}
+              onClick={(event) => go(event, sceneId)}
             >
               <span data-workplane="scene-nav-index">{index + 1}</span>
               {document?.scenes[sceneId]?.title ?? sceneId}
