@@ -7,13 +7,37 @@
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "scripts": { "build": "tsc -b", "clean": "rm -rf dist *.tsbuildinfo" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
   "dependencies": {
     "@bahulam/workplane-core": "workspace:*",
     "@bahulam/workplane-data": "workspace:*",
     "@bahulam/workplane-protocol": "workspace:*"
   },
-  "devDependencies": { "typescript": "^5.7.2" }
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BahulamAI/workplane-ui.git",
+    "directory": "packages/testkit"
+  },
+  "homepage": "https://github.com/BahulamAI/workplane-ui#readme",
+  "bugs": {
+    "url": "https://github.com/BahulamAI/workplane-ui/issues"
+  }
 }

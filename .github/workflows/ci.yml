@@ -43,7 +43,7 @@ jobs:
       - name: Pack every published package and inspect its contents
         run: |
           mkdir -p /tmp/packed
-          for pkg in protocol core data react renderer-echarts testkit; do
+          for pkg in protocol core data react renderer-echarts testkit adapter-bahulam; do
             tarball=$(cd "packages/$pkg" && pnpm pack --pack-destination /tmp/packed | tail -1)
             echo "=== $pkg ==="
             tar -tzf "$tarball"

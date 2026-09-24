@@ -4,14 +4,21 @@
   "description": "Workplane React reference shell: provider, hooks, unstyled primitives, native block catalog, and presenters",
   "license": "Apache-2.0",
   "type": "module",
-  "sideEffects": ["*.css"],
+  "sideEffects": [
+    "*.css"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./styles.css": "./dist/styles.css"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b && cp src/styles.css dist/styles.css",
     "clean": "rm -rf dist *.tsbuildinfo"
@@ -31,5 +38,17 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BahulamAI/workplane-ui.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/BahulamAI/workplane-ui#readme",
+  "bugs": {
+    "url": "https://github.com/BahulamAI/workplane-ui/issues"
   }
 }
