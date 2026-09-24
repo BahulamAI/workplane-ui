@@ -34,19 +34,25 @@ export interface PluginStateStorageOptions {
  * commit atomic at this layer: a crash cannot leave an acknowledged change
  * with no durable record, because there is no second write to lose.
  *
- * Honest limitation: the blackboard has no compare-and-set, so this is
- * last-writer-wins between processes. It is safe because exactly one
- * `LocalAuthority` in one tab is the writer — the embedded-local authority mode
- * in PRD section 6.3, which states plainly that multiple tabs are not
- * automatically safe concurrent writers. For a genuine single writer across
- * clients, use `HttpCommandGateway` against the host command boundary instead.
+ * Reads are deliberately NOT cached. An earlier version held the document in
+ * memory, which made `load()` return a stale revision — so the authority's
+ * concurrency check compared against stale data, accepted a commit at a
+ * revision another writer had already used, and overwrote that writer's work
+ * with no conflict reported. A regression test covers it.
+ *
+ * Reading through means a concurrent write is now DETECTED and returns
+ * CONFLICT. It does not make this safe for genuine concurrency: the blackboard
+ * has no compare-and-set, so a sufficiently tight interleaving can still lose a
+ * write. This is the embedded-local mode of PRD section 6.3, which states
+ * plainly that multiple tabs are not automatically safe concurrent writers. For
+ * a real single writer across clients, use `HttpCommandGateway` against the host
+ * command boundary.
  */
 export class PluginStateStorage implements StoragePort {
   readonly #client: BahulamClient;
   readonly #key: string;
   readonly #seed: WorkplaneDocument;
   readonly #maxEvents: number;
-  #cache: Persisted | undefined;
 
   constructor(options: PluginStateStorageOptions) {
     this.#client = options.client;
@@ -56,23 +62,22 @@ export class PluginStateStorage implements StoragePort {
   }
 
   async #read(): Promise<Persisted> {
-    if (this.#cache) return this.#cache;
+    // Always read through. See the note above: caching here caused silent
+    // overwrites of another writer's committed revision.
     const raw = await this.#client.getKey<Persisted>(this.#key);
     if (raw && typeof raw === "object" && raw.document?.id) {
-      this.#cache = {
+      return {
         document: raw.document,
         events: Array.isArray(raw.events) ? raw.events : [],
         receipts: raw.receipts && typeof raw.receipts === "object" ? raw.receipts : {},
       };
-    } else {
-      this.#cache = { document: this.#seed, events: [], receipts: {} };
-      await this.#write(this.#cache);
     }
-    return this.#cache;
+    const seeded: Persisted = { document: this.#seed, events: [], receipts: {} };
+    await this.#write(seeded);
+    return seeded;
   }
 
   async #write(next: Persisted): Promise<void> {
-    this.#cache = next;
     await this.#client.setKey(this.#key, next as unknown as JsonValue);
   }
 
@@ -102,14 +107,8 @@ export class PluginStateStorage implements StoragePort {
     return (await this.#read()).events.filter((event) => event.revision > revision);
   }
 
-  /** Drop the in-process cache so the next read re-fetches from the host. */
-  invalidate(): void {
-    this.#cache = undefined;
-  }
-
   /** Remove the document entirely. Used by tests and a demo reset. */
   async clear(): Promise<void> {
-    this.#cache = undefined;
     await this.#client.state("delete", { key: this.#key });
   }
 }
