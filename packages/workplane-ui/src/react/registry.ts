@@ -46,6 +46,8 @@ export interface RendererProps<TSpec = JsonValue> {
   bindings: Readonly<Record<string, JsonValue | undefined>>;
   /** True while a newer evaluation epoch is loading. */
   stale: boolean;
+  /** Safe failure message per declared dataRef, when that query failed. */
+  errors: ReadonlyMap<string, string>;
   emit: (event: RendererEvent) => void;
 }
 

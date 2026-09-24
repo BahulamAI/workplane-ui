@@ -8,6 +8,16 @@ export interface EpochState {
   pending: ReadonlySet<string>;
   /** True while a newer epoch is loading and older results are still shown. */
   stale: boolean;
+  /**
+   * Safe, human-readable failure per query id.
+   *
+   * A failed query with a PRIOR result keeps showing it, marked stale. A failed
+   * query with no prior result has nothing to show, and silently leaving it
+   * pending renders a permanent spinner — which is what an unconfigured data
+   * source looked like before this existed. The message is the provider's own,
+   * so "credentials not configured" reaches the user instead of a blank card.
+   */
+  errors: ReadonlyMap<string, string>;
 }
 
 export interface CoordinatorOptions {
@@ -46,6 +56,7 @@ export class QueryCoordinator {
   #results = new Map<string, QueryResult>();
   #pending = new Set<string>();
   #controllers = new Map<string, AbortController>();
+  #errors = new Map<string, string>();
   #timer: ReturnType<typeof setTimeout> | undefined;
   #queued: QueryPlan[] = [];
   #epoch = 0;
@@ -65,6 +76,7 @@ export class QueryCoordinator {
       results: new Map(this.#results),
       pending: new Set(this.#pending),
       stale: this.#pending.size > 0,
+      errors: new Map(this.#errors),
     };
   }
 
@@ -92,7 +104,11 @@ export class QueryCoordinator {
 
     this.#staging.clear();
     this.#groupSize = plans.length;
-    for (const plan of plans) this.#pending.add(plan.queryId);
+    for (const plan of plans) {
+      this.#pending.add(plan.queryId);
+      // Clear a previous failure: this attempt has not failed yet.
+      this.#errors.delete(plan.queryId);
+    }
     this.#onPublish(this.getState());
 
     await Promise.all(plans.map((plan) => this.#execute(plan)));
@@ -119,9 +135,16 @@ export class QueryCoordinator {
 
       if (this.#generation.get(plan.queryId) !== generation) return; // late, discard
       this.#staging.set(plan.queryId, { ...result, generation });
-    } catch {
-      if (this.#generation.get(plan.queryId) !== generation) return;
-      // A failed query leaves the prior coherent result in place, marked stale.
+      this.#errors.delete(plan.queryId);
+    } catch (error) {
+      if (this.#generation.get(plan.queryId) !== generation) return; // late, discard
+      // A failed query leaves any prior coherent result in place, marked stale,
+      // AND records why — so a block with no prior result can say what is wrong
+      // instead of spinning forever.
+      this.#errors.set(
+        plan.queryId,
+        error instanceof Error ? error.message : "The query could not be executed",
+      );
     } finally {
       if (this.#generation.get(plan.queryId) === generation) {
         this.#pending.delete(plan.queryId);

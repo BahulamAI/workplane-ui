@@ -129,6 +129,8 @@ export function useBlockData(): {
   results: ReadonlyMap<string, QueryResult>;
   bindings: Record<string, JsonValue | undefined>;
   stale: boolean;
+  /** Failure message per declared dataRef, if that query failed. */
+  errors: ReadonlyMap<string, string>;
 } {
   const block = useBlockContext();
   const { document, epoch } = useControllerState();
@@ -151,7 +153,13 @@ export function useBlockData(): {
           ? getPointer(document.shared, binding.path)
           : undefined;
     }
-    return { results, bindings, stale: epoch.stale };
+    // Only this block's OWN queries: a failure elsewhere is not its business.
+    const errors = new Map<string, string>();
+    for (const queryId of block.dataRefs) {
+      const message = epoch.errors.get(queryId);
+      if (message) errors.set(queryId, message);
+    }
+    return { results, bindings, stale: epoch.stale, errors };
   }, [block, document, epoch]);
 }
 

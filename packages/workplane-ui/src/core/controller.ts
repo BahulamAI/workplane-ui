@@ -58,7 +58,7 @@ export class WorkplaneController {
   #unsubscribeGateway: (() => void) | undefined;
 
   #document: WorkplaneDocument | undefined;
-  #epoch: EpochState = { epoch: 0, results: new Map(), pending: new Set(), stale: false };
+  #epoch: EpochState = { epoch: 0, results: new Map(), pending: new Set(), stale: false, errors: new Map() };
   #state: ControllerState = { document: undefined, epoch: this.#epoch };
 
   constructor(options: ControllerOptions) {

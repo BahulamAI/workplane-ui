@@ -305,3 +305,71 @@ describe("unsupported presentation modes", () => {
     expect(screen.getByRole("heading", { name: "Overview" })).toBeDefined();
   });
 });
+
+describe("a failing data source tells the user why", () => {
+  /**
+   * The most likely first-run state of a real plugin: credentials are not
+   * configured, so every tool fails. Before `EpochState.errors` existed this
+   * rendered a permanent "Loading…" spinner, which is indistinguishable from a
+   * slow query and tells the user nothing.
+   */
+  async function mountFailing(message: string) {
+    const storage = new MemoryStorage(createDemoDocument());
+    const authority = new LocalAuthority({ storage, policy: DEMO_POLICY });
+    await authority.commit(transaction("seed_overview", 0, OVERVIEW_OPERATIONS), DEMO_AGENT);
+
+    const failing = {
+      id: "always-fails",
+      async execute() {
+        throw new Error(message);
+      },
+    };
+
+    const controller = new WorkplaneController({
+      gateway: authority,
+      documentId: DEMO_DOCUMENT_ID,
+      actor: DEMO_USER,
+      provider: failing,
+      debounceMs: 0,
+    });
+    controllers.push(controller);
+    await controller.load();
+
+    render(
+      <WorkplaneProvider controller={controller} renderers={createNativeRegistry()}>
+        <Presenter controller={controller} registry={createPresenterRegistry()} />
+      </WorkplaneProvider>,
+    );
+    return controller;
+  }
+
+  it("shows the provider's own message instead of an endless spinner", async () => {
+    const message = "Azure credentials not configured. Open plugin Settings to configure.";
+    await mountFailing(message);
+
+    await waitFor(() => {
+      const metric = blockByTitle("Total spend");
+      const fallback = metric.querySelector('[data-workplane="block-fallback"]');
+      expect(fallback).not.toBeNull();
+      expect(fallback?.getAttribute("data-reason")).toBe("data-unavailable");
+      expect(fallback?.textContent).toContain(message);
+    });
+  });
+
+  it("keeps the rest of the document usable", async () => {
+    await mountFailing("boom");
+    // The form has no dataRefs, so it is unaffected by a query failure.
+    await waitFor(() => {
+      expect(within(blockByTitle("Filters")).getByLabelText("Environment")).toBeDefined();
+    });
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeDefined();
+  });
+
+  it("announces the failure to assistive technology", async () => {
+    await mountFailing("credentials missing");
+    await waitFor(() => {
+      const statuses = screen.getAllByRole("status");
+      expect(statuses.some((el) => el.textContent?.includes("credentials missing"))).toBe(true);
+    });
+  });
+});

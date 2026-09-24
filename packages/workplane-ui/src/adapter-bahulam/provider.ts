@@ -80,10 +80,24 @@ export class PluginToolDataProvider implements DataProvider {
       throw new Error("aborted");
     }
 
-    // Tools return either `{success, output}` or a bare payload.
+    // Bahulam tools return `{success, output}`. A failed tool puts its ERROR in
+    // `output`, so unwrapping without checking `success` would shape an error
+    // object into empty rows and render a confident zero. Surface it instead:
+    // a missing credential must look like a failure, never like no spend.
+    const envelope = raw as { success?: boolean; output?: unknown } | undefined;
+    if (envelope && typeof envelope === "object" && envelope.success === false) {
+      const detail = envelope.output;
+      const message =
+        typeof detail === "string"
+          ? detail
+          : typeof (detail as { message?: string })?.message === "string"
+            ? (detail as { message: string }).message
+            : `Tool "${binding.tool}" reported failure`;
+      throw new Error(message);
+    }
     const output =
-      raw && typeof raw === "object" && "output" in (raw as object)
-        ? (raw as { output: unknown }).output
+      envelope && typeof envelope === "object" && "output" in envelope
+        ? envelope.output
         : raw;
 
     const shaped = binding.shape(output, request.parameters);

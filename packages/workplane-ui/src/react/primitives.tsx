@@ -165,7 +165,7 @@ function BlockTitle({ asChild, children, ...props }: PartProps): ReactNode {
 function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: string) => void }): ReactNode {
   const block = useBlockContext();
   const { renderers } = useWorkplaneContext();
-  const { results, bindings, stale } = useBlockData();
+  const { results, bindings, stale, errors } = useBlockData();
 
   const definition = renderers.get(block.rendererId);
   if (!definition) {
@@ -180,6 +180,13 @@ function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: s
     return <BlockFallback reason="invalid-spec" detail={validation.message} />;
   }
 
+  // Nothing to show and a known reason: say the reason. Leaving the block
+  // pending would render a spinner that never resolves, which is what an
+  // unconfigured data source used to look like.
+  if (results.size === 0 && errors.size > 0) {
+    return <BlockFallback reason="data-unavailable" detail={[...errors.values()][0]} />;
+  }
+
   const { Component } = definition;
   return (
     <BlockErrorBoundary
@@ -192,6 +199,7 @@ function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: s
         results={results}
         bindings={bindings}
         stale={stale}
+        errors={errors}
         emit={(event) => onEvent?.(event, block.id)}
       />
     </BlockErrorBoundary>
