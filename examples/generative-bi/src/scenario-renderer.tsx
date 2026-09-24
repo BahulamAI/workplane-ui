@@ -1,6 +1,6 @@
-import { formatMoney, toMajor } from "@bahulam/workplane-data";
-import type { RendererDefinition } from "@bahulam/workplane-react";
-import { scenarioFromPercentages } from "@bahulam/workplane-testkit";
+import { formatMoney, toMajor } from "@bahulam/workplane-ui";
+import type { RendererDefinition } from "@bahulam/workplane-ui/react";
+import { scenarioFromPercentages } from "@bahulam/workplane-ui/testkit";
 
 interface ScenarioSpec {
   field: "savings" | "projectedCost" | "narrative";

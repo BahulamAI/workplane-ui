@@ -13,13 +13,13 @@ import {
   MemoryStorage,
   projectForAgent,
   WorkplaneController,
-} from "@bahulam/workplane-core";
+} from "@bahulam/workplane-ui";
 import {
   createNativeRegistry,
   createPresenterRegistry,
   Presenter,
   WorkplaneProvider,
-} from "@bahulam/workplane-react";
+} from "@bahulam/workplane-ui/react";
 import {
   createDemoDocument,
   DEMO_AGENT,
@@ -30,7 +30,7 @@ import {
   SCENARIO_OPERATIONS,
   SyntheticCostProvider,
   transaction,
-} from "@bahulam/workplane-testkit";
+} from "@bahulam/workplane-ui/testkit";
 import { scenarioRenderer } from "../../examples/generative-bi/src/scenario-renderer.js";
 
 /** Nothing in this flow may increment this. */

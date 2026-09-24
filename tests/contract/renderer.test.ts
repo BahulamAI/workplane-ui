@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createNativeRegistry, type RendererDefinition } from "@bahulam/workplane-react";
-import { echartsRenderer } from "@bahulam/workplane-renderer-echarts";
+import { createNativeRegistry, type RendererDefinition } from "@bahulam/workplane-ui/react";
+import { echartsRenderer } from "@bahulam/workplane-ui/echarts";
 
 const registry = createNativeRegistry().register(echartsRenderer);
 const definitions = [...registry.list()].map((entry) => registry.get(entry.id)!) as RendererDefinition[];

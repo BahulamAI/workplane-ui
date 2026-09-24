@@ -7,7 +7,7 @@ import {
   sceneIdOfBlock,
   type Operation,
   type WorkplaneDocument,
-} from "@bahulam/workplane-core";
+} from "@bahulam/workplane-ui";
 
 const block = (id: string) => ({
   id,

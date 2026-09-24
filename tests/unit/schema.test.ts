@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LocalAuthority, MemoryStorage, validateValue, type ValueSchema } from "@bahulam/workplane-core";
-import { createDemoDocument, DEMO_POLICY, DEMO_USER, transaction } from "@bahulam/workplane-testkit";
+import { LocalAuthority, MemoryStorage, validateValue, type ValueSchema } from "@bahulam/workplane-ui";
+import { createDemoDocument, DEMO_POLICY, DEMO_USER, transaction } from "@bahulam/workplane-ui/testkit";
 
 const CRITERION: ValueSchema = {
   type: "object",

@@ -7,7 +7,7 @@
     "node": ">=20.11"
   },
   "scripts": {
-    "build": "pnpm -r --filter \"./packages/*\" run build",
+    "build": "pnpm --filter @bahulam/workplane-ui run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b tsconfig.build.json",

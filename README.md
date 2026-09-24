@@ -39,19 +39,34 @@ Try the loop it exists to prove:
    the same command gateway. Your unsubmitted draft survives.
 5. Reload the page — document, revision, and view preferences all come back.
 
-## Packages
+## One package, several entry points
 
-| Package | Purpose | Depends on |
+```bash
+pnpm add @bahulam/workplane-ui
+```
+
+| Import | Purpose | Peer needed |
 |---|---|---|
-| `@bahulam/workplane-core` | Document types, invariant validator, pure reducer, command gateway, session store | nothing |
-| `@bahulam/workplane-protocol` | Wire schemas, transaction envelope, error codes | nothing |
-| `@bahulam/workplane-data` | Query/result contracts, dependency graph, evaluation epochs, minor-unit money | protocol |
-| `@bahulam/workplane-react` | Provider, hooks, renderer registry, native block catalog, Document presenter | core, data, react (peer) |
-| `@bahulam/workplane-renderer-echarts` | BI chart adapter with normalized selection events | core, react, echarts (peer) |
-| `@bahulam/workplane-testkit` | Fixtures and conformance helpers | core, data |
+| `@bahulam/workplane-ui` | document types, invariant validator, pure reducer, command gateway, policy, session store, controller, query/data contracts | none |
+| `@bahulam/workplane-ui/react` | provider, hooks, unstyled primitives, native block catalogue, Document presenter | `react` |
+| `@bahulam/workplane-ui/echarts` | BI chart adapter with normalized selection events | `echarts`, `react` |
+| `@bahulam/workplane-ui/bahulam` | Bahulam host adapter: plugin-state storage, command transport, tool-backed data provider, legacy import | none |
+| `@bahulam/workplane-ui/testkit` | fixtures and the gateway conformance suite | none |
+| `@bahulam/workplane-ui/styles.css` | default theme tokens | — |
 
-The headless core imports no React, no chart engine, no model SDK, no Node
-filesystem API, and no Bahulam package. `pnpm lint:boundaries` enforces this.
+One package rather than seven, per PRD section 7.1: *directories express
+architectural boundaries; they do not require separate releases before those
+boundaries are stable.* One version means no skew between core and shell.
+
+The boundaries are still real and still enforced. Inside
+`packages/workplane-ui/src`, each layer is a directory with declared allowed
+imports, and `pnpm lint:boundaries` fails the build if the headless core ever
+reaches for React, a chart engine, a model SDK, a Node builtin, or a Bahulam
+host package. A test also checks the **shipped** output, because that is what a
+bundler actually reads.
+
+`react`, `react-dom`, and `echarts` are optional peers, so a headless consumer —
+a CLI or a server — installs none of them.
 
 ## Architecture in one paragraph
 

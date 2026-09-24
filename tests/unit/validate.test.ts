@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDocument, validateDocument, withLimits, type WorkplaneDocument } from "@bahulam/workplane-core";
-import { createDemoDocument } from "@bahulam/workplane-testkit";
+import { createDocument, validateDocument, withLimits, type WorkplaneDocument } from "@bahulam/workplane-ui";
+import { createDemoDocument } from "@bahulam/workplane-ui/testkit";
 
 const textBlock = (id: string) => ({
   id, kind: "content.text", title: id,

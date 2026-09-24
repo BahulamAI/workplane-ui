@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { LocalAuthority, MemoryStorage } from "@bahulam/workplane-core";
+import { LocalAuthority, MemoryStorage } from "@bahulam/workplane-ui";
 import {
   createDemoDocument,
   DEMO_DOCUMENT_ID,
   DEMO_POLICY,
   runGatewayConformance,
   type ConformanceReport,
-} from "@bahulam/workplane-testkit";
+} from "@bahulam/workplane-ui/testkit";
 
 function report(r: ConformanceReport): string {
   return r.checks

@@ -7,7 +7,7 @@ import {
   type EpochState,
   type QueryRequest,
   type QueryResult,
-} from "@bahulam/workplane-data";
+} from "@bahulam/workplane-ui";
 
 function result(request: QueryRequest, value: number): QueryResult {
   return {

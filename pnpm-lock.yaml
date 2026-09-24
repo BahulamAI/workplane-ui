@@ -44,24 +44,9 @@ importers:
 
   examples/generative-bi:
     dependencies:
-      '@bahulam/workplane-core':
+      '@bahulam/workplane-ui':
         specifier: workspace:*
-        version: link:../../packages/core
-      '@bahulam/workplane-data':
-        specifier: workspace:*
-        version: link:../../packages/data
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
-      '@bahulam/workplane-react':
-        specifier: workspace:*
-        version: link:../../packages/react
-      '@bahulam/workplane-renderer-echarts':
-        specifier: workspace:*
-        version: link:../../packages/renderer-echarts
-      '@bahulam/workplane-testkit':
-        specifier: workspace:*
-        version: link:../../packages/testkit
+        version: link:../../packages/workplane-ui
       echarts:
         specifier: ^5.5.1
         version: 5.6.0
@@ -88,62 +73,7 @@ importers:
         specifier: ^6.0.5
         version: 6.4.3(@types/node@22.20.4)
 
-  packages/adapter-bahulam:
-    dependencies:
-      '@bahulam/workplane-core':
-        specifier: workspace:*
-        version: link:../core
-      '@bahulam/workplane-data':
-        specifier: workspace:*
-        version: link:../data
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../protocol
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/core:
-    dependencies:
-      '@bahulam/workplane-data':
-        specifier: workspace:*
-        version: link:../data
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../protocol
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/data:
-    dependencies:
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../protocol
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/protocol:
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/react:
-    dependencies:
-      '@bahulam/workplane-core':
-        specifier: workspace:*
-        version: link:../core
-      '@bahulam/workplane-data':
-        specifier: workspace:*
-        version: link:../data
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../protocol
+  packages/workplane-ui:
     devDependencies:
       '@types/react':
         specifier: ^19.0.2
@@ -151,53 +81,15 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.2
         version: 19.3.0(@types/react@19.3.0)
-      react:
-        specifier: ^19.0.0
-        version: 19.3.0
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.3.0(react@19.3.0)
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/renderer-echarts:
-    dependencies:
-      '@bahulam/workplane-data':
-        specifier: workspace:*
-        version: link:../data
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@bahulam/workplane-react':
-        specifier: workspace:*
-        version: link:../react
-    devDependencies:
-      '@types/react':
-        specifier: ^19.0.2
-        version: 19.3.0
       echarts:
         specifier: ^5.5.1
         version: 5.6.0
       react:
         specifier: ^19.0.0
         version: 19.3.0
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/testkit:
-    dependencies:
-      '@bahulam/workplane-core':
-        specifier: workspace:*
-        version: link:../core
-      '@bahulam/workplane-data':
-        specifier: workspace:*
-        version: link:../data
-      '@bahulam/workplane-protocol':
-        specifier: workspace:*
-        version: link:../protocol
-    devDependencies:
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.3.0(react@19.3.0)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SessionStore } from "@bahulam/workplane-core";
+import { SessionStore } from "@bahulam/workplane-ui";
 
 describe("AC-03 — a user draft while an agent edits", () => {
   it("survives an unrelated agent change and still submits cleanly", () => {

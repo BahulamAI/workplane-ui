@@ -18,8 +18,8 @@ purpose — each one is a boundary a host replaces independently.
 ```ts
 import {
   LocalAuthority, MemoryStorage, WorkplaneController, createDocument,
-} from "@bahulam/workplane-core";
-import { createNativeRegistry, createPresenterRegistry } from "@bahulam/workplane-react";
+} from "@bahulam/workplane-ui";
+import { createNativeRegistry, createPresenterRegistry } from "@bahulam/workplane-ui/react";
 
 // 1. A document.
 const document = createDocument({ id: "wp_demo", title: "My workspace" });
@@ -31,7 +31,7 @@ const storage = new MemoryStorage(document);
 //    anything absent is rejected by the authority, not hidden by the UI.
 const policy = {
   structuralCapability: "workplane.edit",
-  writablePaths: [{ path: "/filters/period", type: "string" as const }],
+  writablePaths: [{ path: "/filters/period", schema: { type: "string" as const } }],
 };
 
 // 4. The authority. The single writer.

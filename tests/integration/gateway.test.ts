@@ -4,7 +4,7 @@ import {
   MemoryStorage,
   type CommitResult,
   type Transaction,
-} from "@bahulam/workplane-core";
+} from "@bahulam/workplane-ui";
 import {
   createDemoDocument,
   DEMO_AGENT,
@@ -13,7 +13,7 @@ import {
   DEMO_VIEWER,
   OVERVIEW_OPERATIONS,
   transaction,
-} from "@bahulam/workplane-testkit";
+} from "@bahulam/workplane-ui/testkit";
 
 function harness() {
   const storage = new MemoryStorage(createDemoDocument());

@@ -25,9 +25,9 @@ jobs:
       - run: pnpm --filter @bahulam/workplane-example-generative-bi run build
 
   packed:
-    # A standalone example must build from PACKED packages, not only through
-    # workspace source aliases, so a missing stylesheet, schema file, or type
-    # declaration cannot be hidden by local linking.
+    # A consumer must be able to install from the PACKED tarball, not only
+    # through workspace source aliases, so a missing subpath export, stylesheet,
+    # or type declaration cannot be hidden by local linking.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +40,35 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Pack every published package and inspect its contents
+      - name: Pack and verify every declared entry point ships
         run: |
-          mkdir -p /tmp/packed
-          for pkg in protocol core data react renderer-echarts testkit adapter-bahulam; do
-            tarball=$(cd "packages/$pkg" && pnpm pack --pack-destination /tmp/packed | tail -1)
-            echo "=== $pkg ==="
-            tar -tzf "$tarball"
-            # Type declarations and JS must both ship.
-            tar -tzf "$tarball" | grep -q 'dist/index.d.ts' || { echo "MISSING types in $pkg"; exit 1; }
-            tar -tzf "$tarball" | grep -q 'dist/index.js'   || { echo "MISSING js in $pkg"; exit 1; }
-          done
-          # The React package must ship its stylesheet, which tsc does not emit.
-          tar -tzf /tmp/packed/*workplane-react*.tgz | grep -q 'dist/styles.css' \
-            || { echo "MISSING styles.css in react package"; exit 1; }
+          cd packages/workplane-ui
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e '
+            const files = new Set(require("/tmp/pack.json")[0].files.map(f => f.path));
+            const required = [
+              "dist/index.js","dist/index.d.ts",
+              "dist/react.js","dist/react.d.ts",
+              "dist/echarts.js","dist/echarts.d.ts",
+              "dist/bahulam.js","dist/bahulam.d.ts",
+              "dist/testkit.js","dist/testkit.d.ts",
+              "dist/styles.css","README.md",
+            ];
+            const missing = required.filter(f => !files.has(f));
+            if (missing.length) { console.error("MISSING:", missing.join(", ")); process.exit(1); }
+            console.log("all", required.length, "required paths present");
+          '
+      - name: Install the tarball into a scratch project and typecheck it
+        run: |
+          cd packages/workplane-ui && npm pack --pack-destination /tmp
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm i /tmp/bahulam-workplane-ui-*.tgz typescript
+          cat > check.ts <<'TS'
+          import { createDocument, LocalAuthority, MemoryStorage } from "@bahulam/workplane-ui";
+          import { createNativeRegistry } from "@bahulam/workplane-ui/react";
+          import { runGatewayConformance } from "@bahulam/workplane-ui/testkit";
+          void [createDocument, LocalAuthority, MemoryStorage, createNativeRegistry, runGatewayConformance];
+          TS
+          npx tsc --noEmit --strict --module esnext --moduleResolution bundler \
+            --target es2022 --jsx react-jsx --skipLibCheck check.ts

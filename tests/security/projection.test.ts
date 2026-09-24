@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyOperations, projectForAgent } from "@bahulam/workplane-core";
-import { createDemoDocument, DEMO_POLICY, OVERVIEW_OPERATIONS } from "@bahulam/workplane-testkit";
+import { applyOperations, projectForAgent } from "@bahulam/workplane-ui";
+import { createDemoDocument, DEMO_POLICY, OVERVIEW_OPERATIONS } from "@bahulam/workplane-ui/testkit";
 
 function populated() {
   return applyOperations(createDemoDocument(), [...OVERVIEW_OPERATIONS]);
