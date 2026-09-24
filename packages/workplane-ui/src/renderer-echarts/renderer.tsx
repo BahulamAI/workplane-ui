@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, LineChart } from "echarts/charts";
-import { GridComponent, TooltipComponent } from "echarts/components";
+import { BarChart, LineChart, PieChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
 // Modular registration, not `import * as echarts from "echarts"`. The barrel
 // import pulls every chart type and component into the host bundle, which the
 // bundle budget in PRD section 20 does not survive.
-echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 import { formatMoney, money, type QueryResult } from "../data/index.js";
 import type { RendererDefinition, RendererProps } from "../react/index.js";
 import { validateEChartsSpec, type EChartsSpec } from "./spec.js";
@@ -89,10 +89,12 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
     const format = (value: number) =>
       isMoney ? formatMoney(money(Math.round(value), currency)) : String(value);
 
+    const isPie = spec.chartType === "pie";
+
     chart.setOption(
       {
         animation: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-        grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
+        ...(isPie ? {} : { grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true } }),
         tooltip: {
           trigger: "item",
           // A string template, not a function: nothing here can execute code
@@ -100,11 +102,26 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
           formatter: (params: { name: string; value: number }) =>
             `${params.name}: ${format(params.value)}`,
         },
-        xAxis: { type: "category", data: points.map((p) => p.label) },
-        yAxis: { type: "value", axisLabel: { formatter: (v: number) => format(v) } },
+        ...(isPie
+          ? { legend: { type: "scroll", bottom: 0, textStyle: { fontSize: 10 } } }
+          : {
+              xAxis: { type: "category", data: points.map((p) => p.label) },
+              yAxis: { type: "value", axisLabel: { formatter: (v: number) => format(v) } },
+            }),
         series: [
           {
             type: spec.chartType,
+            ...(isPie
+              ? {
+                  // A ring, not a filled pie: proportion is read from arc
+                  // length rather than from wedge area, which is easier to
+                  // compare and is what a donut widget meant.
+                  radius: ["45%", "72%"],
+                  center: ["50%", "44%"],
+                  label: { show: false },
+                  labelLine: { show: false },
+                }
+              : {}),
             data: points.map((p) => ({
               value: p.value,
               name: p.label,

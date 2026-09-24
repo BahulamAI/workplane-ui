@@ -2,6 +2,7 @@ export { BahulamClient, BahulamRequestError, type BahulamClientOptions } from ".
 export { HttpCommandGateway } from "./gateway.js";
 export {
   importLegacyWorkplane,
+  legacyWidgetToBlock,
   type LegacyWidget,
   type LegacyWorkplane,
 } from "./legacy.js";

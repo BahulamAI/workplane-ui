@@ -10,7 +10,7 @@ export interface InlinePoint {
 }
 
 export interface EChartsSpec {
-  chartType: "bar" | "line";
+  chartType: "bar" | "line" | "pie";
   /**
    * Either a query reference or inline points.
    *
@@ -38,7 +38,9 @@ export interface EChartsSpec {
   selectionPath?: string;
 }
 
-const CHART_TYPES = new Set(["bar", "line"]);
+/** `pie` renders as a donut: a ring reads proportion without the centre
+ *  wedge-angle ambiguity, and it is what legacy `donut_chart` widgets meant. */
+const CHART_TYPES = new Set(["bar", "line", "pie"]);
 
 /**
  * Validates the Workplane-owned spec. Note what this is NOT: an ECharts
@@ -53,7 +55,7 @@ export function validateEChartsSpec(spec: unknown): ValidationOutcome<EChartsSpe
   const raw = spec as Record<string, JsonValue>;
 
   if (typeof raw.chartType !== "string" || !CHART_TYPES.has(raw.chartType)) {
-    return { ok: false, message: 'chartType must be "bar" or "line"', path: "/chartType" };
+    return { ok: false, message: 'chartType must be "bar", "line", or "pie"', path: "/chartType" };
   }
 
   const inline = raw.queryId === undefined && Array.isArray(raw.data);

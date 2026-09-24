@@ -107,7 +107,7 @@ describe("legacy values survive the unit conversion", () => {
   it("labels every imported block as a snapshot with its timestamp", () => {
     for (const op of ops) {
       if (op.op !== "block.add") continue;
-      expect(op.block.fallback).toMatch(/imported from a legacy widget snapshot taken 2026-09-24/);
+      expect(op.block.fallback).toMatch(/imported from a legacy widget snapshot — taken 2026-09-24/);
     }
   });
 
