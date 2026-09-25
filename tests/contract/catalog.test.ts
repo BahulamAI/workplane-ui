@@ -63,6 +63,55 @@ describe("the published catalog matches the renderers that exist", () => {
   });
 });
 
+describe("every advertised example actually works", () => {
+  /**
+   * This is what makes the catalog trustworthy rather than merely present.
+   *
+   * Prose drifts from the validator and nothing notices — an agent then follows
+   * a description that stopped being true and gets a rejection it cannot
+   * explain. An example cannot drift, because it is run through the renderer it
+   * claims to describe.
+   */
+  it.each(BUILTIN_RENDERERS.map((r) => [r.id, r] as const))(
+    "%s: the published example validates",
+    (id, descriptor) => {
+      const renderer = registry.get(id);
+      expect(renderer, `${id} is described but not registered`).toBeDefined();
+      const outcome = renderer!.validate(descriptor.example);
+      expect(
+        outcome.ok,
+        outcome.ok ? "" : `the catalog advertises a spec its own renderer rejects: ${outcome.message}`,
+      ).toBe(true);
+    },
+  );
+
+  it.each(
+    BUILTIN_RENDERERS.filter((r) => r.alternateExample).map((r) => [r.id, r] as const),
+  )("%s: the alternate example validates too", (id, descriptor) => {
+    const outcome = registry.get(id)!.validate(descriptor.alternateExample);
+    expect(outcome.ok, outcome.ok ? "" : `alternate example rejected: ${outcome.message}`).toBe(true);
+  });
+
+  it("summarises every example without throwing", () => {
+    // summarize() feeds agent context, so a renderer that throws on its own
+    // advertised spec would poison the projection.
+    for (const descriptor of BUILTIN_RENDERERS) {
+      const outcome = registry.get(descriptor.id)!.validate(descriptor.example);
+      if (!outcome.ok) continue;
+      const summary = registry.get(descriptor.id)!.summarize(outcome.value as never);
+      expect(typeof summary, descriptor.id).toBe("string");
+      expect(summary.length, descriptor.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("puts the examples in what the agent is sent", () => {
+    const text = describeCatalog();
+    expect(text).toContain('"markdown"');
+    expect(text).toContain('"lineStyle"');
+    expect(text).toContain('"actionId"');
+  });
+});
+
 describe("the button block", () => {
   const button = registry.get("workplane.button")!;
 
