@@ -50,9 +50,12 @@ export class HttpCommandGateway implements CommandGateway {
 
   async snapshot(documentId: string): Promise<WorkplaneDocument | undefined> {
     try {
-      const result = await this.#client.get<{ document?: WorkplaneDocument }>(
-        `${this.#base()}?documentId=${encodeURIComponent(documentId)}`,
+      const result = await this.#client.get<{ document?: WorkplaneDocument; documentId?: string }>(
+        this.#base(),
       );
+      // The host owns the document id for a plugin; a caller asking for a
+      // different one is asking for something this boundary cannot serve.
+      if (result?.documentId && result.documentId !== documentId) return undefined;
       return result?.document;
     } catch {
       return undefined;
@@ -116,7 +119,7 @@ export class HttpCommandGateway implements CommandGateway {
   async eventsAfter(documentId: string, revision: number): Promise<CommittedEvent[]> {
     try {
       const result = await this.#client.get<{ events?: CommittedEvent[] }>(
-        `${this.#base()}/events?documentId=${encodeURIComponent(documentId)}&after=${revision}`,
+        `${this.#base()}/events?after=${revision}`,
       );
       return result?.events ?? [];
     } catch {
