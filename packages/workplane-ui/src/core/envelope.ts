@@ -32,8 +32,15 @@ export type KeyTree =
   | { readonly $verbatim: true }
   /** An object with exactly these keys; anything else is dropped. */
   | { readonly [key: string]: KeyTree }
-  /** An array whose every item follows the inner tree. */
-  | { readonly $array: KeyTree };
+  /**
+   * An array whose every item follows the inner tree.
+   *
+   * `orSingle` accepts a lone object and normalizes it to a one-element array,
+   * for engines that accept either. Being stricter than the engine means
+   * rejecting input that is correct for it, which is a worse failure than
+   * accepting a shape we then normalize.
+   */
+  | { readonly $array: KeyTree; readonly orSingle?: boolean };
 
 export interface SpecLimits {
   maxDepth: number;
@@ -170,7 +177,14 @@ function walk(tree: KeyTree, value: JsonValue, path: string, depth: number, ctx:
   // Object.
   const record = value as { [k: string]: JsonValue };
   if (tree !== true && typeof tree === "object" && "$array" in tree) {
-    ctx.violations.push({ path, message: "An array is required here" });
+    if (tree.orSingle) {
+      const single = walk(tree.$array, value, path, depth, ctx);
+      return single === undefined ? undefined : [single];
+    }
+    ctx.violations.push({
+      path,
+      message: "An array is required here; wrap this object in [ ] or send a list",
+    });
     return undefined;
   }
   const out: { [k: string]: JsonValue } = {};

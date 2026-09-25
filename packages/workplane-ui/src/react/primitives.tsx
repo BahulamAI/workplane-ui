@@ -177,7 +177,7 @@ function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: s
 
   const validation = definition.validate(block.spec);
   if (!validation.ok) {
-    return <BlockFallback reason="invalid-spec" detail={validation.message} />;
+    return <BlockFallback reason="invalid-spec" detail={validation.message} at={validation.path} />;
   }
 
   // Nothing to show and a known reason: say the reason. Leaving the block
@@ -226,14 +226,17 @@ const RECOVERY: Record<FallbackReason, string> = {
  * fallback text, and what to do about it. A reader must be able to tell what
  * is missing without seeing the chart.
  */
-function BlockFallback({ reason, detail }: { reason: FallbackReason; detail?: string }): ReactNode {
+function BlockFallback({ reason, detail, at }: { reason: FallbackReason; detail?: string; at?: string }): ReactNode {
   const block = useBlockContext();
   return (
     <div data-workplane="block-fallback" data-reason={reason} role="status">
       <p data-workplane="fallback-text">{block.fallback}</p>
       <p data-workplane="fallback-detail">
         <code>{block.rendererId}</code> — {RECOVERY[reason]}
-        {detail ? ` (${detail})` : ""}
+        {detail ? ` ${detail}` : ""}
+        {/* Where, not just what. A validation message without a location leaves
+            an author guessing which field of a large spec is at fault. */}
+        {at ? <> at <code>{at}</code></> : null}
       </p>
     </div>
   );

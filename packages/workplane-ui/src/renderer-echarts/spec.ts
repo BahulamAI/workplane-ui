@@ -40,8 +40,22 @@ export interface EChartsSpec {
   dropped: string[];
 }
 
+/**
+ * Every failure carries the accepted shape.
+ *
+ * An error that says what is wrong but not what is right costs a round trip and
+ * invites a guess. The catalog carries the same text, but an agent that already
+ * has a spec in hand is reading this, not the catalog.
+ */
+const SHAPE_HINT =
+  'Expected: { option: { xAxis: [{ type: "category", data: [...] }], yAxis: [{ type: "value" }], ' +
+  'series: [{ name, type: "line"|"bar"|"pie", data: [...], lineStyle: { type: "dashed" } }] }, ' +
+  'bind?: { queryId, categoryColumn, series: [{ index, valueColumn }] } }. ' +
+  "Axes, grid and series also accept a single object instead of an array.";
+
 function fail(message: string, path?: string): ValidationOutcome<EChartsSpec> {
-  return path ? { ok: false, message, path } : { ok: false, message };
+  const withHint = `${message}. ${SHAPE_HINT}`;
+  return path ? { ok: false, message: withHint, path } : { ok: false, message: withHint };
 }
 
 function isObject(value: unknown): value is Record<string, JsonValue> {

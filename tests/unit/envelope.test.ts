@@ -197,3 +197,51 @@ describe("the chart adapter speaks ECharts", () => {
     expect(outcome.message).toMatch(/send an ECharts option directly/);
   });
 });
+
+describe("the envelope accepts what the engine accepts", () => {
+  it("takes a single object where the engine allows one, and normalises it", () => {
+    // ECharts accepts xAxis as an object OR an array. Being stricter than the
+    // engine means rejecting input that is correct for it.
+    const outcome = echartsRenderer.validate({
+      option: {
+        xAxis: { type: "category", data: ["Jan", "Feb"] },
+        yAxis: { type: "value" },
+        series: { type: "line", data: [1, 2] },
+      },
+    });
+    expect(outcome.ok, outcome.ok ? "" : outcome.message).toBe(true);
+    if (!outcome.ok) return;
+    expect(Array.isArray(outcome.value.option.xAxis)).toBe(true);
+    expect(Array.isArray(outcome.value.option.series)).toBe(true);
+    expect((outcome.value.option.series as unknown[]).length).toBe(1);
+  });
+
+  it("still rejects a scalar where a list belongs", () => {
+    const outcome = echartsRenderer.validate({ option: { series: "line" } });
+    expect(outcome.ok).toBe(false);
+  });
+
+  it("tells the caller the accepted shape, not only the mistake", () => {
+    const outcome = echartsRenderer.validate({ option: { series: [] } });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.message, "an error should carry the fix").toMatch(/Expected: \{ option:/);
+    expect(outcome.message).toMatch(/lineStyle/);
+  });
+
+  it("points at the offending field", () => {
+    const outcome = echartsRenderer.validate({
+      option: { series: [{ type: "line", data: [1] }], tooltip: { formatter: "() => fetch('https://x')" } },
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.path).toBe("/option/tooltip/formatter");
+  });
+
+  it("says how to fix an array mismatch it cannot normalise", () => {
+    const r = sanitizeSpec({ items: { a: 1 } }, { allow: { items: { $array: true } } });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.violations[0]!.message).toMatch(/wrap this object in \[ \]/);
+  });
+});

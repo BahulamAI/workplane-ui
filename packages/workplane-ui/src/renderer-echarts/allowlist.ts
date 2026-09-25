@@ -75,10 +75,10 @@ const SERIES: KeyTree = {
 
 /** The accepted ECharts option subset. */
 export const ECHARTS_ALLOW: KeyTree = {
-  series: { $array: SERIES },
-  xAxis: { $array: AXIS },
-  yAxis: { $array: AXIS },
-  grid: { $array: { left: true, right: true, top: true, bottom: true, containLabel: true, show: true } },
+  series: { $array: SERIES, orSingle: true },
+  xAxis: { $array: AXIS, orSingle: true },
+  yAxis: { $array: AXIS, orSingle: true },
+  grid: { $array: { left: true, right: true, top: true, bottom: true, containLabel: true, show: true }, orSingle: true },
   legend: {
     show: true, type: true, data: { $array: true }, orient: true,
     top: true, bottom: true, left: true, right: true,
