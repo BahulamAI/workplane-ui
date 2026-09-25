@@ -38,6 +38,10 @@ export class HttpCommandGateway implements CommandGateway {
   readonly #plugin: string;
   readonly #listeners = new Set<(event: CommittedEvent, document: WorkplaneDocument) => void>();
   #unsubscribe: (() => void) | undefined;
+  /** Highest revision already delivered to listeners. */
+  #lastSeenRevision = 0;
+  #documentId: string | undefined;
+  #resyncing: Promise<void> | undefined;
 
   constructor(client: BahulamClient) {
     this.#client = client;
@@ -56,6 +60,12 @@ export class HttpCommandGateway implements CommandGateway {
       // The host owns the document id for a plugin; a caller asking for a
       // different one is asking for something this boundary cannot serve.
       if (result?.documentId && result.documentId !== documentId) return undefined;
+      // Remember where we are, so a later bus event replays only what is new
+      // instead of every commit since the beginning.
+      if (result?.document) {
+        this.#documentId = result.document.id;
+        this.#lastSeenRevision = Math.max(this.#lastSeenRevision, result.document.revision);
+      }
       return result?.document;
     } catch {
       return undefined;
@@ -111,7 +121,10 @@ export class HttpCommandGateway implements CommandGateway {
       event: response.event,
       replayed: response.replayed === true,
     };
-    // Local echo, so a caller sees its own commit without waiting for SSE.
+    // Local echo, so a caller sees its own commit without waiting for SSE, and
+    // record it as seen so the bus event that follows is not delivered twice.
+    this.#documentId = result.document.id;
+    this.#lastSeenRevision = Math.max(this.#lastSeenRevision, result.revision);
     for (const listener of this.#listeners) listener(result.event, result.document);
     return result;
   }
@@ -134,8 +147,12 @@ export class HttpCommandGateway implements CommandGateway {
     if (!this.#unsubscribe) {
       this.#unsubscribe = this.#client.subscribeEvents(
         (_name, data) => {
-          const payload = data as { plugin?: string; key?: string } | undefined;
+          const payload = data as { plugin?: string; target?: string } | undefined;
           if (payload?.plugin && payload.plugin !== this.#plugin) return;
+          // The bus fires for every state write in the plugin, including
+          // config. Only a Workplane write is worth a round trip; an unknown
+          // target is resynced anyway rather than risk missing a commit.
+          if (payload?.target && !payload.target.startsWith("workplane")) return;
           // The bus says "something changed", not what. Re-read the authorized
           // snapshot rather than trusting a broadcast payload as state.
           void this.#resync();
@@ -153,24 +170,55 @@ export class HttpCommandGateway implements CommandGateway {
     };
   }
 
-  #lastSeenRevision = 0;
-
+  /**
+   * Re-read the authorized snapshot and deliver whatever is new.
+   *
+   * Serialized: a burst of bus events must not start several overlapping
+   * round trips that then deliver the same commits more than once.
+   */
   async #resync(): Promise<void> {
-    const document = await this.snapshot(this.#documentIdHint ?? "");
-    if (!document || document.revision <= this.#lastSeenRevision) return;
-    const events = await this.eventsAfter(document.id, this.#lastSeenRevision);
-    this.#lastSeenRevision = document.revision;
-    for (const event of events) {
-      for (const listener of this.#listeners) listener(event, document);
-    }
+    if (this.#resyncing) return this.#resyncing;
+    this.#resyncing = (async () => {
+      try {
+        const documentId = this.#documentId;
+        if (!documentId) return;
+        const seen = this.#lastSeenRevision;
+        const document = await this.snapshot(documentId);
+        if (!document || document.revision <= seen) return;
+
+        // Replay only what this client has not delivered yet. If the log has
+        // been compacted past that point the events list is short and the
+        // snapshot still carries the truth, which is why the document is
+        // published regardless.
+        const events = await this.eventsAfter(document.id, seen);
+        this.#lastSeenRevision = document.revision;
+        for (const event of events) {
+          for (const listener of this.#listeners) listener(event, document);
+        }
+        if (events.length === 0) {
+          // A gap we cannot enumerate. Publish the snapshot anyway rather than
+          // leave the client silently behind.
+          const synthetic: CommittedEvent = {
+            documentId: document.id,
+            revision: document.revision,
+            commandId: "resync",
+            operations: [],
+            actor: { id: "host", type: "system" },
+            committedAt: new Date().toISOString(),
+          };
+          for (const listener of this.#listeners) listener(synthetic, document);
+        }
+      } finally {
+        this.#resyncing = undefined;
+      }
+    })();
+    return this.#resyncing;
   }
 
-  #documentIdHint: string | undefined;
-
-  /** Tells the gateway which document to re-read when the bus fires. */
+  /** Optional: pre-set which document to watch before the first snapshot. */
   watch(documentId: string, fromRevision = 0): void {
-    this.#documentIdHint = documentId;
-    this.#lastSeenRevision = fromRevision;
+    this.#documentId = documentId;
+    this.#lastSeenRevision = Math.max(this.#lastSeenRevision, fromRevision);
   }
 
   dispose(): void {
