@@ -6,6 +6,7 @@ export * from "./gateway.js";
 export * from "./history.js";
 export * from "./host.js";
 export * from "./limits.js";
+export * from "./operation-shape.js";
 export * from "./policy.js";
 export * from "./projection.js";
 export * from "./reducer.js";

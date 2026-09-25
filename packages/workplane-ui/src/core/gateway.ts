@@ -12,6 +12,7 @@ import { PROTOCOL_VERSION } from "../protocol/index.js";
 import type { WorkplaneDocument } from "./document.js";
 import { DEFAULT_LIMITS, type WorkplaneLimits } from "./limits.js";
 import { authorizeOperations, type DocumentPolicy } from "./policy.js";
+import { validateOperations } from "./operation-shape.js";
 import { applyOperations, ReducerError } from "./reducer.js";
 import type { StoragePort } from "./storage.js";
 import { validateDocument } from "./validate.js";
@@ -129,6 +130,23 @@ export class LocalAuthority implements CommandGateway {
       );
     }
 
+    // --- shape, before anything downstream assumes well-formed operations ---
+    // Placed ahead of the policy check because a malformed operation cannot be
+    // meaningfully authorized: a pointer that does not parse is a caller
+    // mistake, not a permission one, and reporting it as FORBIDDEN sends an
+    // agent looking for a capability it already has.
+    const shapeProblems = validateOperations(transaction.operations);
+    if (shapeProblems.length > 0) {
+      const first = shapeProblems[0] as { path: string; message: string };
+      return fail("VALIDATION_FAILED", first.message, {
+        path: first.path,
+        detail: {
+          violations: shapeProblems.length,
+          all: shapeProblems.slice(0, 10).map((v) => `${v.path}: ${v.message}`).join(" | "),
+        },
+      });
+    }
+
     // --- idempotency: same id + same payload replays, never reapplies ------
     const payloadFingerprint = fingerprint(transaction.operations as unknown as JsonValue);
     const prior = await this.#storage.receipt(transaction.documentId, transaction.commandId);
@@ -177,7 +195,12 @@ export class LocalAuthority implements CommandGateway {
       if (error instanceof ReducerError) {
         return fail("VALIDATION_FAILED", error.message, { path: error.path });
       }
-      return fail("INTERNAL_ERROR", "The transaction could not be applied", {});
+      // Never discard the reason. An unexpected throw is still a fact the
+      // caller needs; swallowing it leaves an agent retrying the same payload.
+      const message = error instanceof Error ? error.message : String(error);
+      return fail("VALIDATION_FAILED", `The transaction could not be applied: ${message}`, {
+        detail: { kind: error instanceof Error ? error.constructor.name : typeof error },
+      });
     }
 
     // --- validate the RESULT, not just the operations -----------------------

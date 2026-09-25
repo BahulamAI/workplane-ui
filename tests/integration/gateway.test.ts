@@ -291,15 +291,14 @@ describe("a block must be renderable", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("VALIDATION_FAILED");
-    // Every missing field is reported at once, so an agent repairs in one pass
-    // rather than one round trip per field.
+    // Reported against the SUBMITTED transaction, not the resulting document,
+    // so the path is one an agent can edit. Every missing field at once.
     const all = String(result.error.detail?.all ?? "");
-    // fallback is not listed: the reducer defaults it to the block title, which
-    // is a reasonable default. The other four cannot be guessed.
-    for (const field of ["kind", "rendererId", "specVersion", "spec"]) {
-      expect(all, `${field} not reported`).toContain(`/blocks/metric-summary/${field}`);
+    for (const field of ["kind", "rendererId", "specVersion"]) {
+      expect(all, `${field} not reported`).toContain(`/operations/1/block/${field}`);
     }
-    expect(all).toMatch(/namespaced "rendererId"/);
+    // And it names the mistake that produced this payload.
+    expect(all).toMatch(/This is a widget, not a block/);
   });
 
   it("leaves nothing behind when it rejects", async () => {
@@ -370,5 +369,69 @@ describe("a block must be renderable", () => {
       DEMO_AGENT,
     );
     expect(more.ok).toBe(false);
+  });
+});
+
+describe("a malformed operation says what is wrong", () => {
+  /**
+   * These all used to reach the reducer, throw a TypeError or a bare Error, and
+   * come back as "INTERNAL_ERROR: the transaction could not be applied" — which
+   * tells an agent nothing and invites it to retry the identical payload.
+   */
+  const cases: Array<[string, unknown, RegExp, string]> = [
+    ["a widget sent where a block belongs",
+      { op: "block.add", sceneId: "s", block: { id: "m", type: "metric", title: "T", value: 7 } },
+      /This is a widget, not a block/, "/operations/0/block"],
+    ["scene.add with no scene", { op: "scene.add" }, /requires "scene"/, "/operations/0/scene"],
+    ["scene.update with no patch", { op: "scene.update", sceneId: "s" }, /requires "patch"/, "/operations/0/patch"],
+    ["block.add with no block", { op: "block.add", sceneId: "s" }, /requires "block"/, "/operations/0/block"],
+    ["block.move with no target scene", { op: "block.move", blockId: "b" }, /"sceneId"/, "/operations/0/sceneId"],
+    ["state.set with no leading slash", { op: "state.set", path: "filters/x", value: 1 },
+      /JSON Pointer starting with/, "/operations/0/path"],
+    ["state.set with no value", { op: "state.set", path: "/x" }, /"value" is required/, "/operations/0/value"],
+    ["an unknown operation", { op: "block.frobnicate" }, /Unsupported operation/, "/operations/0/op"],
+    ["an operation that is not an object", "block.add", /must be an object/, "/operations/0"],
+  ];
+
+  it.each(cases)("%s", async (_name, operation, pattern, path) => {
+    const { authority } = harness();
+    const result = await authority.commit(
+      transaction("cmd_shape", 0, [operation as never]),
+      DEMO_AGENT,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code, "a caller mistake is not an INTERNAL_ERROR").toBe("VALIDATION_FAILED");
+    expect(result.error.message).toMatch(pattern);
+    expect(result.error.path).toBe(path);
+  });
+
+  it("never reports a caller mistake as INTERNAL_ERROR", async () => {
+    const { authority } = harness();
+    for (const [, operation] of cases) {
+      const result = await authority.commit(
+        transaction(`cmd_${Math.random()}`, 0, [operation as never]),
+        DEMO_AGENT,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).not.toBe("INTERNAL_ERROR");
+    }
+  });
+
+  it("reports every problem in the transaction, not just the first", async () => {
+    const { authority } = harness();
+    const result = await authority.commit(
+      transaction("cmd_many", 0, [
+        { op: "scene.add" } as never,
+        { op: "state.set", path: "bad" } as never,
+      ]),
+      DEMO_AGENT,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const all = String(result.error.detail?.all ?? "");
+    expect(all).toContain("/operations/0/scene");
+    expect(all).toContain("/operations/1/path");
+    expect(result.error.detail?.violations).toBeGreaterThanOrEqual(3);
   });
 });
