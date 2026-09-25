@@ -1,120 +1,254 @@
+import { DEFAULT_SPEC_LIMITS, sanitizeSpec, type JsonValue, type SpecViolation } from "../core/index.js";
 import type { ValidationOutcome } from "../react/index.js";
-import type { JsonValue } from "../protocol/index.js";
+import { ECHARTS_ALLOW, ECHARTS_LIMITS } from "./allowlist.js";
 
-export interface InlinePoint {
-  /** Stable entity id. Falls back to the label when absent. */
-  id?: string;
-  label: string;
-  /** Integer minor units for money, a plain number otherwise. */
-  value: number;
+/**
+ * A chart specification is an ECharts option plus Workplane's data plumbing.
+ *
+ * The split follows PRD-108 VC-05 and section 14.4. `option` is the engine's
+ * own vocabulary, so multi-series, dashed lines, per-series colour and a second
+ * axis all arrive without Workplane inventing a grammar it would then have to
+ * maintain against Vega-Lite, Plotly and deck.gl. `bind` is the part Workplane
+ * does own: which query supplies which series, and which column carries the
+ * stable entity id.
+ */
+export interface SeriesBinding {
+  /** Index into `option.series`. */
+  index: number;
+  /** Result column supplying this series' values. */
+  valueColumn: string;
+  /** Column holding the stable business id, when it differs from the label. */
+  entityColumn?: string;
+}
+
+export interface DataBinding {
+  queryId: string;
+  /** Column supplying the shared category axis. */
+  categoryColumn?: string;
+  series: SeriesBinding[];
 }
 
 export interface EChartsSpec {
-  chartType: "bar" | "line" | "pie";
-  /**
-   * Either a query reference or inline points.
-   *
-   * Inline exists because an agent has no way to add a QueryDescriptor in the
-   * v0.1 operation set, so without it an agent could only chart data the host
-   * had already declared, never a figure it computed itself.
-   */
-  source: "query" | "inline";
-  queryId?: string;
-  categoryColumn?: string;
-  valueColumn?: string;
-  data?: InlinePoint[];
-  currency?: string;
-  /** Column holding the STABLE entity id, when it differs from the label. */
-  entityColumn?: string;
+  /** Validated ECharts option. Unknown keys have been dropped. */
+  option: Record<string, JsonValue>;
+  /** Absent for a chart whose data is written inline in the option. */
+  bind?: DataBinding;
   entityType?: string;
-  /**
-   * `filter` removes non-selected marks; `highlight` dims them but keeps the
-   * user's context. The PRD prefers highlight on the source chart so the user
-   * can still see what they selected against.
-   */
-  selectionMode?: "none" | "highlight" | "filter";
-  /** Registered writable path the selection commits to. */
+  selectionMode: "none" | "highlight" | "filter";
   selectionPath?: string;
+  /** Keys the allowlist removed, surfaced so an author is not left guessing. */
+  dropped: string[];
 }
 
-/** `pie` renders as a donut: a ring reads proportion without the centre
- *  wedge-angle ambiguity. */
-const CHART_TYPES = new Set(["bar", "line", "pie"]);
+function fail(message: string, path?: string): ValidationOutcome<EChartsSpec> {
+  return path ? { ok: false, message, path } : { ok: false, message };
+}
+
+function isObject(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 /**
- * Validates the Workplane-owned spec. Note what this is NOT: an ECharts
- * `option` object. Accepting raw vendor options would let an agent supply
- * formatter functions, remote image URLs, and data loaders — so the adapter
- * BUILDS the option from validated fields instead.
+ * Multi-series charts must be distinguishable without colour.
+ *
+ * This is the one opinion Workplane imposes on appearance, and it is not a
+ * stylistic preference: colour-only encoding fails WCAG 2.2 AA, which section
+ * 20 commits to. It is a rule on the envelope, not a grammar — an adapter for
+ * any other engine would enforce the same requirement in that engine's terms.
  */
+function checkSeriesDistinguishable(option: Record<string, JsonValue>): SpecViolation | null {
+  const series = Array.isArray(option.series) ? (option.series as Record<string, JsonValue>[]) : [];
+  const drawn = series.filter((s) => isObject(s) && s.type !== "pie");
+  if (drawn.length < 2) return null;
+
+  // Bars occupy distinct positions and stacks distinct bands, so neither needs
+  // a pattern. Lines overlap, and two lines sharing a dash pattern differ only
+  // by colour however many colours are in play.
+  const lines = drawn.filter((s) => s.type !== "bar" && typeof s.stack !== "string");
+  if (lines.length < 2) return null;
+
+  const encodingOf = (s: Record<string, JsonValue>): string => {
+    const lineStyle = isObject(s.lineStyle) ? s.lineStyle : undefined;
+    const dash = typeof lineStyle?.type === "string" ? lineStyle.type : "solid";
+    const symbol = typeof s.symbol === "string" ? s.symbol : "none";
+    return `${dash}|${symbol}`;
+  };
+
+  const byEncoding = new Map<string, string[]>();
+  lines.forEach((s, index) => {
+    const name = typeof s.name === "string" ? s.name : `series ${index}`;
+    byEncoding.set(encodingOf(s), [...(byEncoding.get(encodingOf(s)) ?? []), name]);
+  });
+
+  const clashing = [...byEncoding.values()].filter((names) => names.length > 1);
+  if (clashing.length === 0) return null;
+
+  return {
+    path: "/option/series",
+    message:
+      `These line series are distinguishable only by colour: ${clashing
+        .map((names) => names.join(" and "))
+        .join("; ")}. Give each a different lineStyle.type ("solid", "dashed", "dotted", ` +
+      `"dashdot") or a different symbol. Colour alone is unreadable for roughly one in twelve ` +
+      "men (WCAG 2.2 AA, which PRD section 20 commits to).",
+  };
+}
+
+/**
+ * Compatibility: the earlier Workplane-owned shape, compiled into an option.
+ *
+ * Kept so documents written before the envelope keep rendering. New charts
+ * should send `option` directly; this shape cannot express multi-series, which
+ * is what prompted the change.
+ */
+const SIMPLE_TYPES = new Set(["bar", "line", "pie"]);
+
+function fromSimpleShape(raw: Record<string, JsonValue>): unknown | { error: string } {
+  const chartType = String(raw.chartType ?? "");
+  // Never coerce. Quietly turning a requested sunburst into a bar chart shows
+  // the right numbers in the wrong form and says nothing about it.
+  if (!SIMPLE_TYPES.has(chartType)) {
+    return {
+      error:
+        `chartType "${chartType}" is not one of bar, line, pie. For anything else, send an ` +
+        'ECharts option directly: { option: { series: [{ type: "…" }] } } — subject to the ' +
+        "renderer's accepted key list.",
+    };
+  }
+  const inline = Array.isArray(raw.data)
+    ? (raw.data as Record<string, JsonValue>[]).map((p) => ({
+        name: String(p?.label ?? ""),
+        value: Number(p?.value ?? 0),
+        ...(typeof p?.id === "string" ? { id: p.id } : {}),
+      }))
+    : undefined;
+
+  const option: Record<string, unknown> = {
+    series: [{ type: chartType, ...(inline ? { data: inline } : {}) }],
+    tooltip: { trigger: "item" },
+  };
+  if (chartType === "pie") {
+    (option.series as Record<string, unknown>[])[0]!.radius = ["45%", "72%"];
+    option.legend = { type: "scroll", bottom: 0 };
+  } else {
+    option.xAxis = [{ type: "category", ...(inline ? { data: inline.map((p) => p.name) } : {}) }];
+    option.yAxis = [{ type: "value" }];
+    option.grid = [{ left: 8, right: 16, top: 24, bottom: 8, containLabel: true }];
+  }
+
+  const bind =
+    typeof raw.queryId === "string" && typeof raw.valueColumn === "string"
+      ? {
+          queryId: raw.queryId,
+          ...(typeof raw.categoryColumn === "string" ? { categoryColumn: raw.categoryColumn } : {}),
+          series: [
+            {
+              index: 0,
+              valueColumn: raw.valueColumn,
+              ...(typeof raw.entityColumn === "string" ? { entityColumn: raw.entityColumn } : {}),
+            },
+          ],
+        }
+      : undefined;
+
+  return {
+    option,
+    ...(bind ? { bind } : {}),
+    ...(typeof raw.entityType === "string" ? { entityType: raw.entityType } : {}),
+    ...(typeof raw.selectionMode === "string" ? { selectionMode: raw.selectionMode } : {}),
+    ...(typeof raw.selectionPath === "string" ? { selectionPath: raw.selectionPath } : {}),
+  };
+}
+
 export function validateEChartsSpec(spec: unknown): ValidationOutcome<EChartsSpec> {
-  if (typeof spec !== "object" || spec === null || Array.isArray(spec)) {
-    return { ok: false, message: "Spec must be an object" };
-  }
-  const raw = spec as Record<string, JsonValue>;
+  if (!isObject(spec)) return fail("Spec must be an object");
 
-  if (typeof raw.chartType !== "string" || !CHART_TYPES.has(raw.chartType)) {
-    return { ok: false, message: 'chartType must be "bar", "line", or "pie"', path: "/chartType" };
-  }
-
-  const inline = raw.queryId === undefined && Array.isArray(raw.data);
-  if (inline) {
-    const points: InlinePoint[] = [];
-    const rawPoints = raw.data as unknown[];
-    if (rawPoints.length > 1000) {
-      return { ok: false, message: "Inline charts are limited to 1000 points", path: "/data" };
+  // Accept the pre-envelope shape by compiling it, rather than breaking every
+  // document that already uses it.
+  let source = spec;
+  if (spec.option === undefined && spec.chartType !== undefined) {
+    const compiled = fromSimpleShape(spec);
+    if (compiled && typeof compiled === "object" && "error" in compiled) {
+      return fail((compiled as { error: string }).error, "/chartType");
     }
-    for (const [index, entry] of rawPoints.entries()) {
-      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-        return { ok: false, message: "Each point must be an object", path: `/data/${index}` };
+    source = compiled as Record<string, JsonValue>;
+  }
+
+  if (!isObject(source.option)) {
+    return fail(
+      'A chart needs an "option": the ECharts option object, e.g. ' +
+        '{ option: { series: [{ type: "line", data: [...] }], xAxis: [...], yAxis: [...] } }',
+      "/option",
+    );
+  }
+
+  const sanitized = sanitizeSpec<Record<string, JsonValue>>(source.option, {
+    allow: ECHARTS_ALLOW,
+    limits: { ...DEFAULT_SPEC_LIMITS, ...ECHARTS_LIMITS },
+  });
+  if (!sanitized.ok) {
+    const first = sanitized.violations[0] as SpecViolation;
+    return fail(first.message, `/option${first.path}`);
+  }
+  const option = sanitized.value;
+
+  if (!Array.isArray(option.series) || option.series.length === 0) {
+    return fail('"option.series" must be a non-empty array', "/option/series");
+  }
+
+  const accessibility = checkSeriesDistinguishable(option);
+  if (accessibility) return fail(accessibility.message, accessibility.path);
+
+  let bind: DataBinding | undefined;
+  if (source.bind !== undefined) {
+    if (!isObject(source.bind)) return fail('"bind" must be an object', "/bind");
+    const raw = source.bind;
+    if (typeof raw.queryId !== "string" || raw.queryId.length === 0) {
+      return fail('"bind.queryId" must name a query declared on the block', "/bind/queryId");
+    }
+    if (!Array.isArray(raw.series) || raw.series.length === 0) {
+      return fail('"bind.series" must map at least one series to a column', "/bind/series");
+    }
+    const series: SeriesBinding[] = [];
+    for (const [i, entry] of raw.series.entries()) {
+      if (!isObject(entry)) return fail("Each binding must be an object", `/bind/series/${i}`);
+      const index = Number(entry.index);
+      if (!Number.isInteger(index) || index < 0 || index >= (option.series as unknown[]).length) {
+        return fail(
+          `"index" must point at a series in option.series (0..${(option.series as unknown[]).length - 1})`,
+          `/bind/series/${i}/index`,
+        );
       }
-      const point = entry as Record<string, unknown>;
-      if (typeof point.label !== "string") {
-        return { ok: false, message: '"label" must be a string', path: `/data/${index}/label` };
+      if (typeof entry.valueColumn !== "string" || !entry.valueColumn) {
+        return fail('"valueColumn" must be a result column name', `/bind/series/${i}/valueColumn`);
       }
-      if (typeof point.value !== "number" || !Number.isFinite(point.value)) {
-        return { ok: false, message: '"value" must be a finite number', path: `/data/${index}/value` };
-      }
-      points.push({
-        label: point.label,
-        value: point.value,
-        ...(typeof point.id === "string" ? { id: point.id } : {}),
+      series.push({
+        index,
+        valueColumn: entry.valueColumn,
+        ...(typeof entry.entityColumn === "string" ? { entityColumn: entry.entityColumn } : {}),
       });
     }
-    const value: EChartsSpec = {
-      chartType: raw.chartType as EChartsSpec["chartType"],
-      source: "inline",
-      data: points,
-      selectionMode: "none",
+    bind = {
+      queryId: raw.queryId,
+      ...(typeof raw.categoryColumn === "string" ? { categoryColumn: raw.categoryColumn } : {}),
+      series,
     };
-    if (typeof raw.currency === "string") value.currency = raw.currency;
-    if (typeof raw.entityType === "string") value.entityType = raw.entityType;
-    return { ok: true, value };
   }
 
-  for (const key of ["queryId", "categoryColumn", "valueColumn"]) {
-    if (typeof raw[key] !== "string" || (raw[key] as string).length === 0) {
-      return { ok: false, message: `"${key}" must be a non-empty string`, path: `/${key}` };
-    }
-  }
-  const selectionMode = raw.selectionMode ?? "none";
-  if (typeof selectionMode !== "string" || !["none", "highlight", "filter"].includes(selectionMode)) {
-    return { ok: false, message: "selectionMode must be none, highlight, or filter", path: "/selectionMode" };
-  }
-  if (raw.selectionPath !== undefined && typeof raw.selectionPath !== "string") {
-    return { ok: false, message: "selectionPath must be a JSON Pointer string", path: "/selectionPath" };
+  const selectionMode = typeof source.selectionMode === "string" ? source.selectionMode : "none";
+  if (!["none", "highlight", "filter"].includes(selectionMode)) {
+    return fail("selectionMode must be none, highlight, or filter", "/selectionMode");
   }
 
-  const value: EChartsSpec = {
-    chartType: raw.chartType as EChartsSpec["chartType"],
-    source: "query",
-    queryId: raw.queryId as string,
-    categoryColumn: raw.categoryColumn as string,
-    valueColumn: raw.valueColumn as string,
-    selectionMode: selectionMode as EChartsSpec["selectionMode"],
+  return {
+    ok: true,
+    value: {
+      option,
+      ...(bind ? { bind } : {}),
+      ...(typeof source.entityType === "string" ? { entityType: source.entityType } : {}),
+      selectionMode: selectionMode as EChartsSpec["selectionMode"],
+      ...(typeof source.selectionPath === "string" ? { selectionPath: source.selectionPath } : {}),
+      dropped: sanitized.dropped,
+    },
   };
-  if (typeof raw.entityColumn === "string") value.entityColumn = raw.entityColumn;
-  if (typeof raw.entityType === "string") value.entityType = raw.entityType;
-  if (typeof raw.selectionPath === "string") value.selectionPath = raw.selectionPath;
-  return { ok: true, value };
 }

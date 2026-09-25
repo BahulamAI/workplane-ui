@@ -1,5 +1,6 @@
 export * from "./controller.js";
 export * from "./document.js";
+export * from "./envelope.js";
 export * from "./gateway.js";
 export * from "./history.js";
 export * from "./host.js";
