@@ -17,6 +17,19 @@ import type { JsonValue } from "../protocol/index.js";
 export type KeyTree =
   /** Any JSON value here, still subject to the safety rules and limits. */
   | true
+  /**
+   * A string the renderer guarantees to display VERBATIM — as a text node,
+   * never parsed, never interpreted, never used as a URL.
+   *
+   * The content rules exist because a renderer must not fetch and must not
+   * execute. A string that is only ever shown as characters can do neither, so
+   * they do not apply: a code sample legitimately contains `=>`, and lesson
+   * prose legitimately mentions a URL. Length and byte limits still apply.
+   *
+   * An adapter declaring this is making a promise. Using it for anything that
+   * reaches innerHTML, a src, or an href is a defect in that adapter.
+   */
+  | { readonly $verbatim: true }
   /** An object with exactly these keys; anything else is dropped. */
   | { readonly [key: string]: KeyTree }
   /** An array whose every item follows the inner tree. */
@@ -111,7 +124,21 @@ function walk(tree: KeyTree, value: JsonValue, path: string, depth: number, ctx:
     return undefined;
   }
 
-  if (typeof value === "string") return checkString(value, path, ctx) ? value : undefined;
+  const verbatim = tree !== true && typeof tree === "object" && "$verbatim" in tree;
+  if (typeof value === "string") {
+    if (verbatim) {
+      if (value.length > ctx.limits.maxStringLength) {
+        ctx.violations.push({ path, message: `String exceeds ${ctx.limits.maxStringLength} characters` });
+        return undefined;
+      }
+      return value;
+    }
+    return checkString(value, path, ctx) ? value : undefined;
+  }
+  if (verbatim) {
+    ctx.violations.push({ path, message: "A string is required here" });
+    return undefined;
+  }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       ctx.violations.push({ path, message: "Numbers must be finite" });
@@ -216,6 +243,7 @@ export function sanitizeSpec<T = JsonValue>(
 /** Human-readable shape of what an adapter accepts, for catalog discovery. */
 export function describeKeyTree(tree: KeyTree, depth = 0): string {
   if (tree === true) return "any";
+  if (typeof tree === "object" && "$verbatim" in tree) return "text";
   if (typeof tree === "object" && "$array" in tree) {
     return `[${describeKeyTree(tree.$array, depth + 1)}]`;
   }

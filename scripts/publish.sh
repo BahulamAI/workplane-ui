@@ -70,6 +70,7 @@ const required = [
   "dist/react.js", "dist/react.d.ts",
   "dist/echarts.js", "dist/echarts.d.ts",
   "dist/bahulam.js", "dist/bahulam.d.ts",
+  "dist/diagram.js", "dist/diagram.d.ts",
   "dist/testkit.js", "dist/testkit.d.ts",
   "dist/styles.css", "README.md",
 ];

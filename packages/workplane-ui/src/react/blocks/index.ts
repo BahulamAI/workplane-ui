@@ -2,9 +2,11 @@ import { RendererRegistry } from "../registry.js";
 import { formRenderer } from "./form.js";
 import { metricRenderer } from "./metric.js";
 import { tableRenderer } from "./table.js";
+import { codeRenderer, markdownRenderer } from "./prose.js";
 import { factRenderer, textRenderer } from "./text.js";
 
-export { formRenderer, metricRenderer, tableRenderer, factRenderer, textRenderer };
+export { formRenderer, metricRenderer, tableRenderer, factRenderer, textRenderer, markdownRenderer, codeRenderer };
+export { parseMarkdown, parseInline, type MarkdownNode, type Inline } from "./markdown.js";
 
 /**
  * The native catalog. Deliberately small: register a component when a real
@@ -16,6 +18,8 @@ export { formRenderer, metricRenderer, tableRenderer, factRenderer, textRenderer
 export function createNativeRegistry(): RendererRegistry {
   return new RendererRegistry()
     .register(textRenderer)
+    .register(markdownRenderer)
+    .register(codeRenderer)
     .register(factRenderer)
     .register(metricRenderer)
     .register(formRenderer)

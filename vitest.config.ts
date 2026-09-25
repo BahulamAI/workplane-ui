@@ -9,12 +9,13 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     environment: "node",
     environmentMatchGlobs: [["tests/e2e/**", "jsdom"]],
-    server: { deps: { inline: ["echarts"] } },
+    server: { deps: { inline: ["echarts", "mermaid"] } },
   },
   resolve: {
     // Tests import the PUBLIC entry points, so they exercise what ships.
     alias: [
       { find: "@bahulam/workplane-ui/styles.css", replacement: entry("react/styles.css") },
+      { find: "@bahulam/workplane-ui/diagram", replacement: entry("diagram.ts") },
       { find: "@bahulam/workplane-ui/echarts", replacement: entry("echarts.ts") },
       { find: "@bahulam/workplane-ui/bahulam", replacement: entry("bahulam.ts") },
       { find: "@bahulam/workplane-ui/testkit", replacement: entry("testkit.ts") },
