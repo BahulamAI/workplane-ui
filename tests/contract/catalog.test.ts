@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_RENDERERS, describeCatalog } from "@bahulam/workplane-ui";
+import { ALL_CONTRACTS, BUILTIN_RENDERERS, describeBuiltinCatalog, describeCatalog } from "@bahulam/workplane-ui";
 import { createNativeRegistry } from "@bahulam/workplane-ui/react";
 import { echartsRenderer } from "@bahulam/workplane-ui/echarts";
 import { diagramRenderer } from "@bahulam/workplane-ui/diagram";
@@ -8,9 +8,10 @@ const registry = createNativeRegistry().register(echartsRenderer).register(diagr
 
 /**
  * The host describes the catalog without importing the renderers, because the
- * host is headless. Two hand-maintained lists drift, and the drift shows up as
- * an agent confidently using a renderer that is not installed — so they are
- * checked against each other here.
+ * host is headless. The descriptors are derived from the contracts the
+ * components are built from, so drift is structurally impossible rather than
+ * merely tested — these cases assert that the derivation stays wired up, and
+ * that a registry a host assembles itself describes the same things.
  */
 describe("the published catalog matches the renderers that exist", () => {
   it("describes every registered renderer", () => {
@@ -33,11 +34,29 @@ describe("the published catalog matches the renderers that exist", () => {
     }
   });
 
-  it("gives an agent a purpose and a spec shape for each", () => {
+  it("gives an agent a purpose and a working example for each", () => {
     for (const descriptor of BUILTIN_RENDERERS) {
       expect(descriptor.purpose.length, descriptor.id).toBeGreaterThan(20);
-      expect(descriptor.shape.length, descriptor.id).toBeGreaterThan(10);
+      expect(descriptor.example, descriptor.id).toBeDefined();
     }
+  });
+
+  it("describes a host-assembled registry, not a fixed list", () => {
+    // What a host publishes must follow what it registered. A host that leaves
+    // the chart adapter out must not advertise charts.
+    const described = describeCatalog(registry.contracts());
+    expect(described).toContain("workplane.echarts");
+    expect(describeCatalog(createNativeRegistry().contracts())).not.toContain("workplane.echarts");
+  });
+
+  it("carries trust through to discovery", () => {
+    for (const descriptor of BUILTIN_RENDERERS) {
+      expect(descriptor.trust, descriptor.id).toBe("host-reviewed");
+    }
+  });
+
+  it("is the same set the contracts declare", () => {
+    expect(BUILTIN_RENDERERS.map((r) => r.id)).toEqual(ALL_CONTRACTS.map((c) => c.id));
   });
 
   it("names the peer dependency where one is needed", () => {
@@ -47,7 +66,7 @@ describe("the published catalog matches the renderers that exist", () => {
   });
 
   it("renders compactly enough to sit in a tool description", () => {
-    const text = describeCatalog();
+    const text = describeBuiltinCatalog();
     expect(text).toContain("workplane.markdown");
     expect(text).toContain("workplane.diagram");
     // A catalog nobody can afford to send is a catalog nobody sends.
@@ -55,7 +74,7 @@ describe("the published catalog matches the renderers that exist", () => {
   });
 
   it("tells an agent the things it otherwise gets wrong", () => {
-    const text = describeCatalog();
+    const text = describeBuiltinCatalog();
     // Every one of these was an actual mistake made against this API.
     expect(text, "minor units").toMatch(/MINOR UNITS/);
     expect(text, "alt text required").toMatch(/REQUIRED/);
@@ -105,7 +124,7 @@ describe("every advertised example actually works", () => {
   });
 
   it("puts the examples in what the agent is sent", () => {
-    const text = describeCatalog();
+    const text = describeBuiltinCatalog();
     expect(text).toContain('"markdown"');
     expect(text).toContain('"lineStyle"');
     expect(text).toContain('"actionId"');

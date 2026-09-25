@@ -1,5 +1,4 @@
 export * from "./controller.js";
-export * from "./catalog.js";
 export * from "./document.js";
 export * from "./envelope.js";
 export * from "./gateway.js";

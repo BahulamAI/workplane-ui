@@ -2,19 +2,10 @@ import type { ComponentType } from "react";
 import type { Block, WorkplaneController } from "../core/index.js";
 import type { QueryResult } from "../data/index.js";
 import type { JsonValue } from "../protocol/index.js";
+import type { RendererContract, RendererDescriptor } from "../renderers/index.js";
+import { toDescriptor } from "../renderers/index.js";
 
-export interface RendererCapabilities {
-  interactive: boolean;
-  selection: boolean;
-  thumbnail: boolean;
-  staticExport: boolean;
-  suspend: boolean;
-  requiresWebGL: boolean;
-}
-
-export type ValidationOutcome<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; path?: string };
+export type { RendererCapabilities, ValidationOutcome } from "../renderers/index.js";
 
 /**
  * A normalized user event. An ECharts bar click and a 3D object pick both
@@ -51,18 +42,15 @@ export interface RendererProps<TSpec = JsonValue> {
   emit: (event: RendererEvent) => void;
 }
 
-export interface RendererDefinition<TSpec = JsonValue> {
-  id: string;
-  specVersions: readonly string[];
-  /**
-   * Assigned by the HOST registry. A community manifest declaring itself
-   * "host-reviewed" does not become trusted by saying so.
-   */
-  trust: "host-reviewed" | "sandboxed";
-  capabilities: RendererCapabilities;
-  validate(spec: unknown): ValidationOutcome<TSpec>;
-  /** Bounded plain text for agent context. Never the full spec. */
-  summarize(spec: TSpec): string;
+/**
+ * A renderer is its contract plus a component.
+ *
+ * Extending rather than restating the contract is what makes advertising
+ * mandatory: there is no way to register something drawable without also
+ * declaring its purpose and a working example, so the catalog cannot fall
+ * behind the validators.
+ */
+export interface RendererDefinition<TSpec = JsonValue> extends RendererContract<TSpec> {
   Component: ComponentType<RendererProps<TSpec>>;
 }
 
@@ -82,14 +70,17 @@ export class RendererRegistry {
     return this.#definitions.has(rendererId);
   }
 
-  /** Catalog discovery for an agent: ids, versions, capabilities. */
-  list(): Array<Pick<RendererDefinition, "id" | "specVersions" | "trust" | "capabilities">> {
-    return [...this.#definitions.values()].map(({ id, specVersions, trust, capabilities }) => ({
-      id,
-      specVersions,
-      trust,
-      capabilities,
-    }));
+  /**
+   * Catalog discovery for an agent, derived from what is actually registered.
+   * A renderer the host did not register does not appear, and one that is
+   * registered cannot be missing its purpose or example.
+   */
+  list(): RendererDescriptor[] {
+    return [...this.#definitions.values()].map(toDescriptor);
+  }
+
+  contracts(): RendererContract<never>[] {
+    return [...this.#definitions.values()];
   }
 }
 

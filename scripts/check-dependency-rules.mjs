@@ -17,7 +17,7 @@ import { join, relative, resolve } from "node:path";
 const SRC = "packages/workplane-ui/src";
 
 /** Directories under src/, in dependency order. Earlier may not import later. */
-const LAYERS = ["protocol", "data", "core", "react", "renderer-echarts", "adapter-bahulam", "testkit"];
+const LAYERS = ["protocol", "data", "core", "renderers", "react", "renderer-echarts", "adapter-bahulam", "testkit"];
 
 const EXTERNAL_RULES = {
   protocol: [["any external dependency", /^[^./]/]],
@@ -34,6 +34,17 @@ const EXTERNAL_RULES = {
     ["a Bahulam host package", /@bahulam\//],
     ["node builtins", /^node:|^fs$|^path$|^child_process$/],
     ["a database driver", /^pg$|^sqlite3?$|^mysql/],
+  ],
+  // Renderer contracts are the catalog: a host must be able to publish them
+  // without loading React or a chart engine, which is the whole reason they are
+  // separate from the components.
+  renderers: [
+    ["react", /^react(\/|$)|^react-dom/],
+    ["a chart engine", /^echarts|^vega|^plotly|^d3(\/|$)/],
+    ["three.js", /^three(\/|$)|@react-three\//],
+    ["mermaid", /^mermaid(\/|$)/],
+    ["a Bahulam host package", /@bahulam\//],
+    ["node builtins", /^node:|^fs$|^path$|^child_process$/],
   ],
   react: [
     ["a mandatory chart engine", /^echarts|^vega|^plotly/],
@@ -53,10 +64,11 @@ const ALLOWED_INTERNAL = {
   protocol: [],
   data: ["protocol"],
   core: ["protocol", "data"],
-  react: ["protocol", "core", "data"],
-  "renderer-echarts": ["protocol", "core", "data", "react"],
+  renderers: ["protocol", "core", "data"],
+  react: ["protocol", "core", "data", "renderers"],
+  "renderer-echarts": ["protocol", "core", "data", "renderers", "react"],
   "adapter-bahulam": ["protocol", "core", "data"],
-  testkit: ["protocol", "core", "data"],
+  testkit: ["protocol", "core", "data", "renderers"],
 };
 
 const IMPORT = /(?:^|\n)\s*(?:import|export)[\s\S]*?from\s+["']([^"']+)["']/g;

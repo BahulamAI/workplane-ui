@@ -6,9 +6,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { formatMoney, money, type QueryResult, type ResultColumn } from "../data/index.js";
 import type { JsonValue } from "../protocol/index.js";
 import type { RendererDefinition, RendererProps } from "../react/index.js";
-import { describeKeyTree } from "../core/index.js";
-import { ECHARTS_ALLOW } from "./allowlist.js";
-import { validateEChartsSpec, type EChartsSpec } from "./spec.js";
+import { echartsContract, type EChartsSpec } from "../renderers/index.js";
 
 // Modular registration, not `import * as echarts from "echarts"`. The barrel
 // import pulls every chart type into the host bundle, which the bundle budget
@@ -180,31 +178,7 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
 }
 
 export const echartsRenderer: RendererDefinition<EChartsSpec> = {
-  id: "workplane.echarts",
-  specVersions: ["1"],
-  trust: "host-reviewed",
-  capabilities: {
-    interactive: true,
-    selection: true,
-    thumbnail: true,
-    staticExport: true,
-    suspend: true,
-    requiresWebGL: false,
-  },
-  validate: validateEChartsSpec,
+  ...echartsContract,
   Component: ChartComponent,
-  summarize: (spec) => {
-    const series = Array.isArray(spec.option.series) ? (spec.option.series as Record<string, JsonValue>[]) : [];
-    const kinds = [...new Set(series.map((s) => String(s.type ?? "?")))].join("/");
-    return `${series.length} ${kinds} series${spec.bind ? ` from ${spec.bind.queryId}` : " (inline)"}`;
-  },
 };
 
-/** What this adapter accepts, for catalog discovery by an agent. */
-export function echartsSpecShape(): string {
-  return (
-    "{ option: <ECharts option>, bind?: { queryId, categoryColumn?, series: [{ index, valueColumn, entityColumn? }] }, " +
-    "entityType?, selectionMode?: none|highlight|filter, selectionPath? }\n" +
-    `option accepts: ${describeKeyTree(ECHARTS_ALLOW)}`
-  );
-}

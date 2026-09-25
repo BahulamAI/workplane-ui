@@ -1,24 +1,9 @@
 import type { ReactNode } from "react";
-import { sanitizeSpec, type KeyTree } from "../../core/index.js";
-import type { JsonValue } from "../../protocol/index.js";
 import type { RendererDefinition } from "../registry.js";
+import { codeContract, markdownContract, type CodeSpec, type MarkdownSpec } from "../../renderers/index.js";
 import { parseMarkdown, type Inline, type MarkdownNode } from "./markdown.js";
 
 // --- markdown ---------------------------------------------------------------
-
-interface MarkdownSpec {
-  markdown: string;
-  /** Generated prose is labelled so a reader can tell it from a bound fact. */
-  generated?: boolean;
-}
-
-const MARKDOWN_ALLOW: KeyTree = {
-  // $verbatim: the source is parsed into React elements and every leaf becomes
-  // a text node. It never reaches innerHTML, so a URL or a `=>` inside it is
-  // just characters — and lesson prose needs both.
-  markdown: { $verbatim: true },
-  generated: true,
-};
 
 function renderInline(nodes: Inline[], keyPrefix = ""): ReactNode[] {
   return nodes.map((node, index) => {
@@ -97,33 +82,7 @@ function renderBlocks(nodes: MarkdownNode[]): ReactNode[] {
 }
 
 export const markdownRenderer: RendererDefinition<MarkdownSpec> = {
-  id: "workplane.markdown",
-  specVersions: ["1"],
-  trust: "host-reviewed",
-  capabilities: {
-    interactive: false, selection: false, thumbnail: true,
-    staticExport: true, suspend: false, requiresWebGL: false,
-  },
-  validate(spec: unknown) {
-    const result = sanitizeSpec<MarkdownSpec>(spec, {
-      allow: MARKDOWN_ALLOW,
-      limits: { maxDepth: 4, maxNodes: 64, maxBytes: 128 * 1024, maxArrayLength: 8, maxStringLength: 64 * 1024 },
-    });
-    if (!result.ok) {
-      const first = result.violations[0]!;
-      return { ok: false as const, message: first.message, path: first.path };
-    }
-    // A scalar or null spec sanitizes to itself, so confirm it is an object
-    // before reading a field off it.
-    if (typeof result.value !== "object" || result.value === null || Array.isArray(result.value)) {
-      return { ok: false as const, message: "Spec must be an object" };
-    }
-    if (typeof result.value.markdown !== "string" || result.value.markdown.length === 0) {
-      return { ok: false as const, message: '"markdown" must be a non-empty string', path: "/markdown" };
-    }
-    return { ok: true as const, value: result.value };
-  },
-  summarize: (spec) => spec.markdown.replace(/[#*`_>|-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200),
+  ...markdownContract,
   Component: ({ spec }) => (
     <div data-workplane="prose" data-generated={spec.generated ? "true" : undefined}>
       {renderBlocks(parseMarkdown(spec.markdown))}
@@ -134,49 +93,8 @@ export const markdownRenderer: RendererDefinition<MarkdownSpec> = {
 
 // --- code -------------------------------------------------------------------
 
-interface CodeSpec {
-  code: string;
-  language?: string;
-  caption?: string;
-}
-
-const CODE_ALLOW: KeyTree = {
-  // Source is displayed, never executed, never parsed. `=>` and `function(` are
-  // the normal contents of a code sample, not a smuggling attempt.
-  code: { $verbatim: true },
-  language: true,
-  caption: true,
-};
-
 export const codeRenderer: RendererDefinition<CodeSpec> = {
-  id: "workplane.code",
-  specVersions: ["1"],
-  trust: "host-reviewed",
-  capabilities: {
-    interactive: false, selection: false, thumbnail: false,
-    staticExport: true, suspend: false, requiresWebGL: false,
-  },
-  validate(spec: unknown) {
-    const result = sanitizeSpec<CodeSpec>(spec, {
-      allow: CODE_ALLOW,
-      limits: { maxDepth: 3, maxNodes: 32, maxBytes: 128 * 1024, maxArrayLength: 4, maxStringLength: 64 * 1024 },
-    });
-    if (!result.ok) {
-      const first = result.violations[0]!;
-      return { ok: false as const, message: first.message, path: first.path };
-    }
-    if (typeof result.value !== "object" || result.value === null || Array.isArray(result.value)) {
-      return { ok: false as const, message: "Spec must be an object" };
-    }
-    if (typeof result.value.code !== "string" || result.value.code.length === 0) {
-      return { ok: false as const, message: '"code" must be a non-empty string', path: "/code" };
-    }
-    if (result.value.language !== undefined && !/^[A-Za-z0-9+#._-]{1,24}$/.test(result.value.language)) {
-      return { ok: false as const, message: '"language" must be a short identifier', path: "/language" };
-    }
-    return { ok: true as const, value: result.value };
-  },
-  summarize: (spec) => `${spec.language ?? "code"} sample, ${spec.code.split("\n").length} lines`,
+  ...codeContract,
   Component: ({ spec }) => (
     <figure data-workplane="code-block">
       <pre data-workplane="code" data-language={spec.language}>

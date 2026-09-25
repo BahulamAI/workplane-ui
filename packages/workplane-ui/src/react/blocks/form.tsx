@@ -3,62 +3,7 @@ import type { Operation } from "../../protocol/index.js";
 import { useWorkplaneContext } from "../context.js";
 import { useControllerState, useDraft } from "../hooks.js";
 import type { RendererDefinition } from "../registry.js";
-import { isObject } from "./shared.js";
-
-interface FieldOption {
-  value: string;
-  label: string;
-}
-
-interface Field {
-  name: string;
-  label: string;
-  control: "text" | "number" | "select" | "checkbox";
-  /** Registered writable path. The authority rejects anything unregistered. */
-  path: string;
-  options?: FieldOption[];
-  min?: number;
-  max?: number;
-  step?: number;
-}
-
-interface FormSpec {
-  fields: Field[];
-  submitLabel: string;
-}
-
-const CONTROLS = new Set(["text", "number", "select", "checkbox"]);
-
-function validateField(raw: unknown, index: number): { ok: false; message: string; path: string } | { ok: true; value: Field } {
-  if (!isObject(raw)) return { ok: false, message: "Field must be an object", path: `/fields/${index}` };
-  for (const key of ["name", "label", "control", "path"]) {
-    if (typeof raw[key] !== "string") {
-      return { ok: false, message: `"${key}" must be a string`, path: `/fields/${index}/${key}` };
-    }
-  }
-  if (!CONTROLS.has(raw.control as string)) {
-    return { ok: false, message: `Unsupported control "${String(raw.control)}"`, path: `/fields/${index}/control` };
-  }
-  if (!(raw.path as string).startsWith("/")) {
-    return { ok: false, message: "Field path must be a JSON Pointer", path: `/fields/${index}/path` };
-  }
-  const field: Field = {
-    name: raw.name as string,
-    label: raw.label as string,
-    control: raw.control as Field["control"],
-    path: raw.path as string,
-  };
-  if (Array.isArray(raw.options)) {
-    field.options = raw.options.filter(isObject).map((o) => ({
-      value: String(o.value),
-      label: String(o.label ?? o.value),
-    }));
-  }
-  for (const key of ["min", "max", "step"] as const) {
-    if (typeof raw[key] === "number") field[key] = raw[key] as number;
-  }
-  return { ok: true, value: field };
-}
+import { formContract, type FormField as Field, type FormSpec } from "../../renderers/index.js";
 
 function FormField({ field }: { field: Field }): React.ReactNode {
   const draft = useDraft(field.path);
@@ -121,34 +66,7 @@ type SubmitState =
  * dirty fields (so a half-applied form is not a reachable state).
  */
 export const formRenderer: RendererDefinition<FormSpec> = {
-  id: "workplane.form",
-  specVersions: ["1"],
-  trust: "host-reviewed",
-  capabilities: {
-    interactive: true,
-    selection: false,
-    thumbnail: false,
-    staticExport: false,
-    suspend: true,
-    requiresWebGL: false,
-  },
-  validate(spec: unknown) {
-    if (!isObject(spec)) return { ok: false as const, message: "Spec must be an object" };
-    if (!Array.isArray(spec.fields) || spec.fields.length === 0) {
-      return { ok: false as const, message: '"fields" must be a non-empty array', path: "/fields" };
-    }
-    const fields: Field[] = [];
-    for (const [index, raw] of spec.fields.entries()) {
-      const outcome = validateField(raw, index);
-      if (!outcome.ok) return { ok: false as const, message: outcome.message, path: outcome.path };
-      fields.push(outcome.value);
-    }
-    return {
-      ok: true as const,
-      value: { fields, submitLabel: typeof spec.submitLabel === "string" ? spec.submitLabel : "Apply" },
-    };
-  },
-  summarize: (spec) => `form: ${spec.fields.map((f) => f.name).join(", ")}`,
+  ...formContract,
   Component: ({ spec }) => {
     const { controller } = useWorkplaneContext();
     const { document } = useControllerState();
