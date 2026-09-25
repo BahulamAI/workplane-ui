@@ -1,6 +1,8 @@
 # ADR-WP-012: Who owns a renderer's visual grammar
 
-**Status:** Proposed — awaiting decision. No code has moved.
+**Status:** **Accepted** — decided by PRD-108 section 28 (VC-05), 2026-09-24.
+Option C was chosen. Implementation tracked as WP-020, demonstrated by AC-24
+and AC-29.
 **Date:** 2026-09-24
 **Relates to:** PRD-108 sections 8.2, 10.1, 10.3, 10.4, 14.4, 19.2, 20
 
@@ -117,7 +119,18 @@ engine vocabulary.
 - Two spec surfaces per adapter to build, document, and test.
 - Does not remove the need for a narrow grammar, so it inherits A's cost.
 
-## Recommendation
+## Decision
+
+PRD-108 section 28 settles this. VC-05:
+
+> Workplane owns the common envelope and safety properties. Renderer-native
+> specifications retain the engine's visual vocabulary; a common chart grammar
+> must not constrain complex visuals to features shared by all engines.
+
+VC-06 adds that adapters must be installable, registerable, discoverable and
+loadable under host policy, and usable by every presenter without
+engine-specific logic in the presenters. That rules out options A, B and D as
+the primary model.
 
 **Option C**, with two additions:
 
