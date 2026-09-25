@@ -16,8 +16,7 @@ export interface EChartsSpec {
    *
    * Inline exists because an agent has no way to add a QueryDescriptor in the
    * v0.1 operation set, so without it an agent could only chart data the host
-   * had already declared — and an imported legacy widget, which carries literal
-   * values and no query, could not render at all.
+   * had already declared, never a figure it computed itself.
    */
   source: "query" | "inline";
   queryId?: string;
@@ -39,7 +38,7 @@ export interface EChartsSpec {
 }
 
 /** `pie` renders as a donut: a ring reads proportion without the centre
- *  wedge-angle ambiguity, and it is what legacy `donut_chart` widgets meant. */
+ *  wedge-angle ambiguity. */
 const CHART_TYPES = new Set(["bar", "line", "pie"]);
 
 /**

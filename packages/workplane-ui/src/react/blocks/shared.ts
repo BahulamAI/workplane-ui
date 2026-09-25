@@ -51,10 +51,9 @@ export function describeColumn(column: ResultColumn | undefined): string {
  * Build a result from values carried in the spec itself, so a block with no
  * query renders through exactly the same path as one with a query.
  *
- * Two cases need this. An imported legacy widget has literal numbers and no
- * query to re-run. And an agent that computed something itself has nothing to
- * point a `dataRef` at — the v0.1 operation set has no way to add a
- * QueryDescriptor, so without this it could not chart its own findings at all.
+ * An agent that computed something itself has nothing to point a `dataRef` at:
+ * the v0.1 operation set has no way to add a QueryDescriptor, so without inline
+ * values an agent could not show its own findings at all.
  *
  * Inline results are marked `freshness: "unknown"` and carry generation 0:
  * they are a snapshot, and nothing can refresh them.
