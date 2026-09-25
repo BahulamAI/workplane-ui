@@ -15,6 +15,14 @@ interface Persisted {
   document: WorkplaneDocument;
   events: CommittedEvent[];
   receipts: Record<string, CommandReceipt>;
+  /**
+   * Revision below which history was compacted away, if any.
+   *
+   * Dropping events silently would make a verifier report a broken chain when
+   * nothing is actually wrong. PRD section 19.1 permits compaction with
+   * checkpoints; this is the checkpoint.
+   */
+  compactedBefore?: number;
 }
 
 export interface PluginStateStorageOptions {
@@ -70,6 +78,7 @@ export class PluginStateStorage implements StoragePort {
         document: raw.document,
         events: Array.isArray(raw.events) ? raw.events : [],
         receipts: raw.receipts && typeof raw.receipts === "object" ? raw.receipts : {},
+        ...(typeof raw.compactedBefore === "number" ? { compactedBefore: raw.compactedBefore } : {}),
       };
     }
     const seeded: Persisted = { document: this.#seed, events: [], receipts: {} };
@@ -89,13 +98,20 @@ export class PluginStateStorage implements StoragePort {
   async commit(bundle: CommitBundle): Promise<void> {
     const persisted = await this.#read();
     const events = [...persisted.events, bundle.event];
+
+    // Compact the oldest events rather than growing without bound, and RECORD
+    // that it happened. A silently truncated log looks identical to a broken
+    // chain, and the two need different responses.
+    const overflow = events.length - this.#maxEvents;
+    const kept = overflow > 0 ? events.slice(overflow) : events;
+    const compactedBefore =
+      overflow > 0 ? kept[0]!.revision : persisted.compactedBefore;
+
     await this.#write({
       document: bundle.document,
-      // Compact the oldest events rather than growing without bound. A
-      // truncated log means a reconnecting client gets a fresh snapshot,
-      // which the protocol already handles.
-      events: events.length > this.#maxEvents ? events.slice(-this.#maxEvents) : events,
+      events: kept,
       receipts: { ...persisted.receipts, [bundle.receipt.commandId]: bundle.receipt },
+      ...(compactedBefore !== undefined ? { compactedBefore } : {}),
     });
   }
 
@@ -105,6 +121,12 @@ export class PluginStateStorage implements StoragePort {
 
   async eventsAfter(_documentId: string, revision: number): Promise<CommittedEvent[]> {
     return (await this.#read()).events.filter((event) => event.revision > revision);
+  }
+
+  /** Earliest revision still held, so a caller knows what history is missing. */
+  async earliestRevision(): Promise<number | null> {
+    const persisted = await this.#read();
+    return persisted.compactedBefore ?? persisted.events[0]?.revision ?? null;
   }
 
   /** Remove the document entirely. Used by tests and a demo reset. */

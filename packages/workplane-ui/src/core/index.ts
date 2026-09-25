@@ -13,6 +13,9 @@ export * from "./validate.js";
 
 export type {
   Actor,
+  CommitInput,
+  DivergenceReport,
+  HistoryVerdict,
   Anchor,
   BindingRef,
   BlockInput,
@@ -30,11 +33,16 @@ export type {
 } from "../protocol/index.js";
 export {
   canonicalize,
+  compareHistories,
+  computeCommitId,
+  COMMIT_ID_PREFIX,
   fingerprint,
   formatPointer,
   getPointer,
   parsePointer,
   PROTOCOL_VERSION,
   setPointer,
+  shortCommitId,
+  verifyHistory,
   workplaneError,
 } from "../protocol/index.js";

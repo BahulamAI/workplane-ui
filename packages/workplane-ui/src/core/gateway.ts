@@ -1,4 +1,5 @@
 import {
+  computeCommitId,
   fingerprint,
   workplaneError,
   type Actor,
@@ -84,6 +85,13 @@ export class LocalAuthority implements CommandGateway {
     );
     this.#queue = run.catch(() => undefined);
     return run;
+  }
+
+  /** Commit id of the current head, or null for the first commit. */
+  async #headCommitId(documentId: string, revision: number): Promise<string | null> {
+    if (revision <= 0) return null;
+    const recent = await this.#storage.eventsAfter(documentId, revision - 1);
+    return recent.find((event) => event.revision === revision)?.commitId ?? null;
   }
 
   async #commitSerialized(transaction: Transaction, actor: Actor): Promise<CommitResult> {
@@ -211,6 +219,19 @@ export class LocalAuthority implements CommandGateway {
       }
     }
 
+    // Chain this commit onto the current head, so history is verifiable and two
+    // writers that both produce "revision N" can be told apart.
+    const committedAt = this.#now();
+    const parentId = await this.#headCommitId(next.id, document.revision);
+    const commitId = await computeCommitId({
+      parentId,
+      documentId: next.id,
+      revision,
+      operations: transaction.operations,
+      actorId: actor.id,
+      committedAt,
+    });
+
     const event: CommittedEvent = {
       documentId: next.id,
       revision,
@@ -219,7 +240,9 @@ export class LocalAuthority implements CommandGateway {
       actor: actor.label
         ? { id: actor.id, type: actor.type, label: actor.label }
         : { id: actor.id, type: actor.type },
-      committedAt: this.#now(),
+      committedAt,
+      commitId,
+      parentId,
     };
 
     await this.#storage.commit({

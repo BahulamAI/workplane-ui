@@ -106,4 +106,13 @@ export interface CommittedEvent {
   operations: readonly Operation[];
   actor: { id: string; type: Actor["type"]; label?: string };
   committedAt: string;
+  /**
+   * Content-addressed identity of this commit, and the commit it extends.
+   *
+   * Optional only because documents written before content addressing exist.
+   * Every new commit carries both, and history verification reports a missing
+   * id as "unverifiable" rather than pretending the chain is sound.
+   */
+  commitId?: string;
+  parentId?: string | null;
 }
