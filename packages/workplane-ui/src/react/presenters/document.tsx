@@ -98,10 +98,19 @@ function DocumentPresenter(): React.ReactNode {
         case "value.commit":
           void controller.setSharedValue(event.payload.path, event.payload.value);
           break;
+        case "action.request": {
+          // The renderer emits an intent; the controller decides. A block
+          // cannot reach the broker, so what a button may do stays a host
+          // decision rather than a document one.
+          void controller.requestAction(event.payload).then((outcome) => {
+            if ("status" in outcome && outcome.status === "unsupported") {
+              console.warn(`[workplane] action "${event.payload.actionId}": ${outcome.reason}`);
+            }
+          });
+          break;
+        }
         case "value.draft":
-        case "action.request":
-          // Drafts stay local; actions require a host ActionBroker, which is
-          // an explicit unsupported state rather than a silent no-op.
+          // Drafts stay local until an explicit commit.
           break;
       }
     },

@@ -16,6 +16,7 @@ import {
 } from "../protocol/index.js";
 import { PROTOCOL_VERSION } from "../protocol/index.js";
 import type { WorkplaneDocument } from "./document.js";
+import type { ActionBroker, ActionOutcome, ActionRequest } from "./host.js";
 import type { CommandGateway, CommitResult } from "./gateway.js";
 import { SessionStore } from "./session.js";
 
@@ -29,6 +30,11 @@ export interface ControllerOptions {
   debounceMs?: number;
   /** Injected for deterministic tests. */
   commandId?: () => string;
+  /**
+   * Registered host actions. Absent means a block that requests one gets an
+   * explicit unsupported result rather than a silent no-op — PRD section 12.1.
+   */
+  actions?: ActionBroker;
 }
 
 export interface ControllerState {
@@ -55,6 +61,7 @@ export class WorkplaneController {
   readonly #coordinator: QueryCoordinator;
   readonly #listeners = new Set<() => void>();
   readonly #nextCommandId: () => string;
+  readonly #actions: ActionBroker | undefined;
   #unsubscribeGateway: (() => void) | undefined;
 
   #document: WorkplaneDocument | undefined;
@@ -68,6 +75,7 @@ export class WorkplaneController {
     this.session = options.session ?? new SessionStore();
     this.#nextCommandId =
       options.commandId ?? (() => `cmd_${Date.now().toString(36)}_${(++commandCounter).toString(36)}`);
+    this.#actions = options.actions;
 
     this.#coordinator = new QueryCoordinator({
       provider: options.provider,
@@ -160,6 +168,30 @@ export class WorkplaneController {
       await this.#refreshFor(operations);
     }
     return result;
+  }
+
+  /**
+   * Request a registered action.
+   *
+   * Routed through the host broker, which applies the same policy to a click
+   * and to an agent proposal — AC-10. A renderer cannot reach the broker
+   * directly; it emits an intent and this decides.
+   */
+  async requestAction(request: ActionRequest): Promise<ActionOutcome | { status: "unsupported"; reason: string }> {
+    if (!this.#actions) {
+      return {
+        status: "unsupported",
+        reason:
+          "This host registers no actions, so nothing can be requested. " +
+          "A plugin declares actions in its manifest.",
+      };
+    }
+    return this.#actions.request(request);
+  }
+
+  /** Registered actions, for showing what a document may ask for. */
+  async availableActions(): Promise<ReadonlyArray<{ actionId: string; summary: string }>> {
+    return this.#actions ? this.#actions.listRegistered() : [];
   }
 
   /** Convenience for a single committed value change. */
