@@ -1,6 +1,7 @@
 export * from "./controller.js";
 export * from "./document.js";
 export * from "./gateway.js";
+export * from "./history.js";
 export * from "./host.js";
 export * from "./limits.js";
 export * from "./policy.js";
