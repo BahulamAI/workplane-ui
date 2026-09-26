@@ -172,3 +172,55 @@ export function useViewState() {
   const { controller } = useWorkplaneContext();
   return useSessionSnapshot(() => controller.session.getViewState());
 }
+
+export interface SceneNavigation {
+  sceneOrder: readonly string[];
+  activeSceneId: string | null;
+  /** Index of the active scene, or 0 when none has been chosen yet. */
+  activeIndex: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  goTo: (sceneId: string) => void;
+  previous: () => void;
+  next: () => void;
+}
+
+/**
+ * Scene traversal, shared by every presenter.
+ *
+ * Navigation writes only to view state, so moving between scenes never creates
+ * a document revision — a reader paging through someone else's workspace must
+ * not appear in its history.
+ */
+export function useSceneNavigation(): SceneNavigation {
+  const { controller } = useWorkplaneContext();
+  const sceneOrder = useSceneOrder();
+  const view = useViewState();
+
+  const activeIndex = Math.max(0, sceneOrder.indexOf(view.activeSceneId ?? ""));
+  const goTo = useCallback(
+    (sceneId: string) => controller.session.patchViewState({ activeSceneId: sceneId }),
+    [controller],
+  );
+  const step = useCallback(
+    (delta: number) => {
+      const next = sceneOrder[activeIndex + delta];
+      if (next) goTo(next);
+    },
+    [sceneOrder, activeIndex, goTo],
+  );
+
+  return useMemo(
+    () => ({
+      sceneOrder,
+      activeSceneId: view.activeSceneId,
+      activeIndex,
+      hasPrevious: activeIndex > 0,
+      hasNext: activeIndex < sceneOrder.length - 1,
+      goTo,
+      previous: () => step(-1),
+      next: () => step(1),
+    }),
+    [sceneOrder, view.activeSceneId, activeIndex, goTo, step],
+  );
+}

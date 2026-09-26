@@ -2,10 +2,12 @@ export * from "./contract.js";
 export * from "./native.js";
 export * from "./diagram.js";
 export * from "./echarts.js";
+export * from "./three.js";
 
 import { describeCatalog, type RendererContract, type RendererDescriptor, toDescriptor } from "./contract.js";
 import { diagramContract } from "./diagram.js";
 import { echartsContract } from "./echarts.js";
+import { threeContract } from "./three.js";
 import { NATIVE_CONTRACTS } from "./native.js";
 
 /**
@@ -21,6 +23,7 @@ export const ALL_CONTRACTS: readonly RendererContract<never>[] = [
   ...NATIVE_CONTRACTS,
   diagramContract,
   echartsContract,
+  threeContract,
   // The spec type appears in both a return position (validate) and an argument
   // position (summarize), so no single instantiation covers every contract.
   // Erasing it is safe here because the catalog only reads declarations.

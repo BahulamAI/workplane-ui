@@ -42,7 +42,10 @@ describe("bundle budgets (PRD section 20)", () => {
   it("the headless layers stay under 100 KB gzip combined", () => {
     // "Headless package: at most 100 KB gzip including required runtime
     // dependencies; measured separately from React and renderers."
-    expect(gzippedBytes("protocol", "core", "data")).toBeLessThan(100 * KB);
+    // `renderers` is part of the headless entry: `src/index.ts` exports it so a
+    // host can publish the catalog without React. Measuring without it would
+    // understate what a consumer of "." actually pulls.
+    expect(gzippedBytes("protocol", "core", "data", "renderers")).toBeLessThan(100 * KB);
   });
 
   it("the React reference shell stays under 250 KB gzip", () => {
@@ -55,6 +58,13 @@ describe("bundle budgets (PRD section 20)", () => {
   it("the chart adapter is separable from the default graph", () => {
     expect(gzippedBytes("renderer-echarts")).toBeLessThan(50 * KB);
   });
+
+  it("the 3D adapter is separable too", () => {
+    // Our code only. `three` itself is an optional peer and never in this
+    // output, which is the whole reason it has its own entry point: a document
+    // with no 3D block must not pay 150 KB for the possibility of one.
+    expect(gzippedBytes("renderer-three")).toBeLessThan(50 * KB);
+  });
 });
 
 describe("the headless entry really is headless", () => {
@@ -65,7 +75,7 @@ describe("the headless entry really is headless", () => {
    * by `pnpm lint:boundaries`; this checks the SHIPPED output too, because that
    * is what a bundler actually reads.
    */
-  const headless = ["protocol", "core", "data"].flatMap((layer) => files(join(DIST, layer)));
+  const headless = ["protocol", "core", "data", "renderers"].flatMap((layer) => files(join(DIST, layer)));
 
   it("ships JavaScript and declarations for every headless layer", () => {
     expect(headless.some((f) => f.endsWith(".js"))).toBe(true);
@@ -79,6 +89,7 @@ describe("the headless entry really is headless", () => {
       for (const [label, pattern] of [
         ["react", /from\s*["']react(\/|["'])/],
         ["a chart engine", /from\s*["'](echarts|vega|plotly|d3)/],
+        ["three.js", /from\s*["']three(\/|["'])/],
         ["a node builtin", /from\s*["']node:/],
       ] as const) {
         if (pattern.test(text)) offenders.push(`${file} imports ${label}`);
@@ -93,7 +104,7 @@ describe("the headless entry really is headless", () => {
     const manifest = JSON.parse(
       readFileSync("packages/workplane-ui/package.json", "utf8"),
     ) as { peerDependenciesMeta?: Record<string, { optional?: boolean }> };
-    for (const peer of ["react", "react-dom", "echarts"]) {
+    for (const peer of ["react", "react-dom", "echarts", "mermaid", "three"]) {
       expect(manifest.peerDependenciesMeta?.[peer]?.optional).toBe(true);
     }
   });

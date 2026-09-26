@@ -17,6 +17,7 @@ export default defineConfig({
       { find: "@bahulam/workplane-ui/styles.css", replacement: entry("react/styles.css") },
       { find: "@bahulam/workplane-ui/diagram", replacement: entry("diagram.ts") },
       { find: "@bahulam/workplane-ui/echarts", replacement: entry("echarts.ts") },
+      { find: "@bahulam/workplane-ui/three", replacement: entry("three.ts") },
       { find: "@bahulam/workplane-ui/bahulam", replacement: entry("bahulam.ts") },
       { find: "@bahulam/workplane-ui/testkit", replacement: entry("testkit.ts") },
       { find: "@bahulam/workplane-ui/react", replacement: entry("react.ts") },

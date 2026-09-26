@@ -40,6 +40,21 @@ export interface RendererContract<TSpec = JsonValue> {
   summarize(spec: TSpec): string;
 }
 
+/**
+ * Whether a block should be doing work right now.
+ *
+ * `active`   — on screen; render normally.
+ * `near`     — mounted so navigating to it is instant, but not being looked at.
+ * `offscreen`— mounted only to hold its place; release everything expensive.
+ *
+ * A renderer declaring `suspend: true` MUST release its costly resources — a
+ * WebGL context, a decoder, a requestAnimationFrame loop — once this leaves
+ * `active`. Browsers cap live WebGL contexts at roughly eight, so a presenter
+ * that slides through scenes will exhaust them within a few swipes if blocks
+ * treat being mounted as permission to keep drawing.
+ */
+export type BlockActivity = "active" | "near" | "offscreen";
+
 export interface RendererCapabilities {
   interactive: boolean;
   selection: boolean;

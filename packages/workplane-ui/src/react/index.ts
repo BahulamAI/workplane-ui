@@ -1,4 +1,4 @@
-export { WorkplaneProvider, useWorkplaneContext, useSceneContext, useBlockContext } from "./context.js";
+export { ActivityProvider, WorkplaneProvider, useActivity, useWorkplaneContext, useSceneContext, useBlockContext } from "./context.js";
 export { BlockErrorBoundary } from "./error-boundary.js";
 export * from "./hooks.js";
 export { BlockPrimitive, ScenePrimitive, WorkplanePrimitive, type FallbackReason } from "./primitives.js";

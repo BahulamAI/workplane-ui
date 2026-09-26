@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { Block, Scene, WorkplaneController } from "../core/index.js";
+import type { BlockActivity } from "../renderers/index.js";
 import type { RendererRegistry } from "./registry.js";
 
 export interface WorkplaneContextValue {
@@ -10,6 +11,12 @@ export interface WorkplaneContextValue {
 const WorkplaneContext = createContext<WorkplaneContextValue | null>(null);
 const SceneContext = createContext<Scene | null>(null);
 const BlockContext = createContext<Block | null>(null);
+/**
+ * Defaults to "active" so a presenter that mounts everything — Document, which
+ * is the print and accessibility fallback — needs no change and no renderer
+ * regresses. A windowing presenter narrows it per scene.
+ */
+const ActivityContext = createContext<BlockActivity>("active");
 
 export function useWorkplaneContext(): WorkplaneContextValue {
   const value = useContext(WorkplaneContext);
@@ -23,6 +30,15 @@ export function useSceneContext(): Scene {
   const scene = useContext(SceneContext);
   if (!scene) throw new Error("This component must be rendered inside a Scene primitive.");
   return scene;
+}
+
+/** What the presenter says this part of the document should be doing. */
+export function useActivity(): BlockActivity {
+  return useContext(ActivityContext);
+}
+
+export function ActivityProvider(props: { value: BlockActivity; children: ReactNode }): ReactNode {
+  return <ActivityContext.Provider value={props.value}>{props.children}</ActivityContext.Provider>;
 }
 
 export function useBlockContext(): Block {

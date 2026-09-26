@@ -2,8 +2,10 @@ import type { PresentationMode } from "../../core/index.js";
 import { useViewState } from "../hooks.js";
 import type { PresenterDefinition, PresenterProps } from "../registry.js";
 import { documentPresenter } from "./document.js";
+import { feedPresenter } from "./feed.js";
 
-export { documentPresenter };
+export { documentPresenter, feedPresenter };
+export { focusOwnsArrowKeys, useRendererEvents } from "./events.js";
 
 export class PresenterRegistry {
   #presenters = new Map<string, PresenterDefinition>();
@@ -23,18 +25,19 @@ export class PresenterRegistry {
 }
 
 /**
- * Feed and Stack are specified in the PRD (section 5.4) and scheduled for M2
- * and M3. They are registered here as explicitly unsupported rather than
- * omitted, so a host that requests one gets a stated reason and a working
- * fallback instead of a blank region.
+ * Stack is specified in the PRD (section 5.4) and scheduled for M3. It is
+ * registered here as explicitly unsupported rather than omitted, so a host that
+ * requests it gets a stated reason and a working fallback instead of a blank
+ * region.
  */
 const NOT_YET_IMPLEMENTED: Record<string, string> = {
-  feed: "Feed presentation is specified for milestone M2 and is not implemented yet.",
   stack: "Stack presentation is specified for milestone M3 and is not implemented yet.",
 };
 
 export function createPresenterRegistry(): PresenterRegistry {
-  const registry = new PresenterRegistry().register(documentPresenter);
+  const registry = new PresenterRegistry()
+    .register(documentPresenter)
+    .register(feedPresenter);
   for (const [mode, reason] of Object.entries(NOT_YET_IMPLEMENTED)) {
     registry.register({
       mode,

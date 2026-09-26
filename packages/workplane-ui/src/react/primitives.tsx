@@ -1,5 +1,5 @@
 import { type HTMLAttributes, type ReactNode } from "react";
-import { BlockProvider, SceneProvider, useBlockContext, useSceneContext, useWorkplaneContext } from "./context.js";
+import { BlockProvider, SceneProvider, useActivity, useBlockContext, useSceneContext, useWorkplaneContext } from "./context.js";
 import { BlockErrorBoundary } from "./error-boundary.js";
 import { useBlockData, useControllerState, useSceneOrder } from "./hooks.js";
 import type { RendererEvent } from "./registry.js";
@@ -166,6 +166,7 @@ function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: s
   const block = useBlockContext();
   const { renderers } = useWorkplaneContext();
   const { results, bindings, stale, errors } = useBlockData();
+  const activity = useActivity();
 
   const definition = renderers.get(block.rendererId);
   if (!definition) {
@@ -199,6 +200,7 @@ function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: s
         results={results}
         bindings={bindings}
         stale={stale}
+        activity={activity}
         errors={errors}
         emit={(event) => onEvent?.(event, block.id)}
       />

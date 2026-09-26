@@ -17,7 +17,7 @@ import { join, relative, resolve } from "node:path";
 const SRC = "packages/workplane-ui/src";
 
 /** Directories under src/, in dependency order. Earlier may not import later. */
-const LAYERS = ["protocol", "data", "core", "renderers", "react", "renderer-echarts", "adapter-bahulam", "testkit"];
+const LAYERS = ["protocol", "data", "core", "renderers", "react", "renderer-echarts", "renderer-three", "adapter-bahulam", "testkit"];
 
 const EXTERNAL_RULES = {
   protocol: [["any external dependency", /^[^./]/]],
@@ -67,6 +67,7 @@ const ALLOWED_INTERNAL = {
   renderers: ["protocol", "core", "data"],
   react: ["protocol", "core", "data", "renderers"],
   "renderer-echarts": ["protocol", "core", "data", "renderers", "react"],
+  "renderer-three": ["protocol", "core", "data", "renderers", "react"],
   "adapter-bahulam": ["protocol", "core", "data"],
   testkit: ["protocol", "core", "data", "renderers"],
 };

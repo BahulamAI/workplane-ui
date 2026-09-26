@@ -63,6 +63,7 @@ describe("AC-14 — switching presentation mode", () => {
     expect(view).not.toHaveProperty("revision");
     expect(Object.keys(view).sort()).toEqual([
       "activeSceneId",
+      "feedAxis",
       "focusedBlockId",
       "followNewScenes",
       "historyRevision",

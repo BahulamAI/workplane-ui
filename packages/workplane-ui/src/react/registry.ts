@@ -2,10 +2,10 @@ import type { ComponentType } from "react";
 import type { Block, WorkplaneController } from "../core/index.js";
 import type { QueryResult } from "../data/index.js";
 import type { JsonValue } from "../protocol/index.js";
-import type { RendererContract, RendererDescriptor } from "../renderers/index.js";
+import type { BlockActivity, RendererContract, RendererDescriptor } from "../renderers/index.js";
 import { toDescriptor } from "../renderers/index.js";
 
-export type { RendererCapabilities, ValidationOutcome } from "../renderers/index.js";
+export type { BlockActivity, RendererCapabilities, ValidationOutcome } from "../renderers/index.js";
 
 /**
  * A normalized user event. An ECharts bar click and a 3D object pick both
@@ -37,6 +37,12 @@ export interface RendererProps<TSpec = JsonValue> {
   bindings: Readonly<Record<string, JsonValue | undefined>>;
   /** True while a newer evaluation epoch is loading. */
   stale: boolean;
+  /**
+   * Whether this block should be actively rendering. A renderer that declares
+   * `suspend: true` must release expensive resources when this is not
+   * "active"; one that declares `suspend: false` may ignore it.
+   */
+  activity: BlockActivity;
   /** Safe failure message per declared dataRef, when that query failed. */
   errors: ReadonlyMap<string, string>;
   emit: (event: RendererEvent) => void;

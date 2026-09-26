@@ -2,8 +2,20 @@ import type { JsonValue } from "../protocol/index.js";
 
 export type PresentationMode = "document" | "feed" | "stack";
 
+/**
+ * Which way Feed advances between scenes.
+ *
+ * A view preference, not a document property: the same scenes, blocks and
+ * revisions are traversed either way, so changing it is not a migration. It
+ * lives here rather than in `PresentationMode` because adding a fourth mode
+ * would oblige every host to handle it, while an axis every Feed host already
+ * handles by construction.
+ */
+export type FeedAxis = "horizontal" | "vertical";
+
 export interface WorkplaneViewState {
   mode: PresentationMode;
+  feedAxis: FeedAxis;
   navigationDomain: "scenes" | "history";
   activeSceneId: string | null;
   historyRevision: number | null;
@@ -59,6 +71,7 @@ export class SessionStore {
   constructor(initialView?: Partial<WorkplaneViewState>) {
     this.#view = {
       mode: "document",
+      feedAxis: "horizontal",
       navigationDomain: "scenes",
       activeSceneId: null,
       historyRevision: null,

@@ -2,7 +2,8 @@ import { useCallback } from "react";
 import { useWorkplaneContext } from "../context.js";
 import { useControllerState, useSceneOrder, useViewState } from "../hooks.js";
 import { BlockPrimitive, ScenePrimitive, WorkplanePrimitive } from "../primitives.js";
-import type { PresenterDefinition, RendererEvent } from "../registry.js";
+import type { PresenterDefinition } from "../registry.js";
+import { useRendererEvents } from "./events.js";
 
 /**
  * Continuous vertical sections with a sticky scene navigator.
@@ -38,7 +39,7 @@ function SceneNavigator(): React.ReactNode {
 
       const target = globalThis.document?.getElementById(`scene-${sceneId}`);
       if (!target) return;
-      target.scrollIntoView({
+      target.scrollIntoView?.({
         behavior: view.reducedMotion ? "auto" : "smooth",
         block: "start",
       });
@@ -77,45 +78,7 @@ function SceneNavigator(): React.ReactNode {
 }
 
 function DocumentPresenter(): React.ReactNode {
-  const { controller } = useWorkplaneContext();
-
-  /**
-   * Normalized renderer events become commands, reads, or local state — never
-   * a direct write. A selection is a committed document change; a draft is not.
-   */
-  const onEvent = useCallback(
-    (event: RendererEvent, blockId: string) => {
-      switch (event.type) {
-        case "selection.changed": {
-          controller.session.setSelection(blockId, event.payload.ids);
-          const block = controller.document?.blocks[blockId];
-          const spec = block?.spec as { selectionPath?: string } | undefined;
-          if (spec?.selectionPath) {
-            void controller.setSharedValue(spec.selectionPath, [...event.payload.ids]);
-          }
-          break;
-        }
-        case "value.commit":
-          void controller.setSharedValue(event.payload.path, event.payload.value);
-          break;
-        case "action.request": {
-          // The renderer emits an intent; the controller decides. A block
-          // cannot reach the broker, so what a button may do stays a host
-          // decision rather than a document one.
-          void controller.requestAction(event.payload).then((outcome) => {
-            if ("status" in outcome && outcome.status === "unsupported") {
-              console.warn(`[workplane] action "${event.payload.actionId}": ${outcome.reason}`);
-            }
-          });
-          break;
-        }
-        case "value.draft":
-          // Drafts stay local until an explicit commit.
-          break;
-      }
-    },
-    [controller],
-  );
+  const onEvent = useRendererEvents();
 
   return (
     <WorkplanePrimitive.Root data-mode="document">

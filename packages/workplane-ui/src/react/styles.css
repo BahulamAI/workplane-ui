@@ -115,3 +115,84 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Feed presentation ----------------------------------------------------
+ *
+ * Navigation is native scroll-snap. The presenter observes the result instead
+ * of handling wheel or touch events, so nothing here may disable scrolling on
+ * a child: a table, a chart, or a 3D canvas has to keep its own gesture.
+ */
+[data-workplane="feed-rail"] { position: sticky; top: 0; z-index: 2; background: var(--wp-bg); padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="feed-rail"] ol { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; overflow-x: auto; }
+[data-workplane="feed-rail"] a { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--wp-border); color: var(--wp-text); text-decoration: none; font-size: 0.85rem; white-space: nowrap; }
+[data-workplane="feed-rail"] a[aria-current="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+[data-workplane="feed-rail-index"] { color: var(--wp-text-muted); font-variant-numeric: tabular-nums; }
+
+[data-workplane="feed-scroller"] {
+  display: flex;
+  /* Contain the overscroll so swiping past the last scene does not trigger the
+     browser's own back gesture. */
+  overscroll-behavior: contain;
+  scroll-snap-type: x mandatory;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* A viewport-relative height rather than an aspect ratio: section 5.4.2
+     forbids forcing every scene into a portrait video shape, so a chart or a
+     form keeps its natural proportions. */
+  height: min(78vh, 900px);
+}
+[data-workplane="feed-scroller"][data-axis="vertical"] {
+  flex-direction: column;
+  scroll-snap-type: y mandatory;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+[data-workplane="feed-scroller"]:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+
+[data-workplane="feed-scene"] {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--wp-gap);
+  box-sizing: border-box;
+}
+/* The scene's own scroll container. A tall table scrolls here and the feed
+   stays where it is. */
+[data-workplane="feed-scene"] [data-workplane="scene-blocks"] {
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+[data-workplane="feed-placeholder"] {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--wp-border);
+  border-radius: var(--wp-radius);
+  color: var(--wp-text-muted);
+  background: var(--wp-surface);
+}
+
+[data-workplane="feed-controls"] { display: flex; gap: 8px; align-items: center; padding: 8px 0; flex-wrap: wrap; }
+[data-workplane="feed-position"] { color: var(--wp-text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; margin-inline-end: auto; }
+[data-workplane="feed-exit"] { margin-inline-start: auto; }
+
+/* Honour the setting rather than animating anyway: section 5.4 requires every
+   navigation to remain available through a flat transition. */
+[data-workplane="feed-scroller"][data-reduced-motion="true"] { scroll-behavior: auto; }
+@media (prefers-reduced-motion: reduce) {
+  [data-workplane="feed-scroller"] { scroll-behavior: auto; }
+}
+
+/* --- 3D adapter ----------------------------------------------------------- */
+[data-workplane="three"] { margin: 0; }
+[data-workplane="three-canvas"] { position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--wp-surface); border: 1px solid var(--wp-border); border-radius: var(--wp-radius); overflow: hidden; }
+[data-workplane="three-canvas"]:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+[data-workplane="three-poster"] { width: 100%; height: 100%; object-fit: contain; display: block; }
+[data-workplane="three-unavailable"] { display: grid; place-items: center; height: 100%; padding: var(--wp-gap); text-align: center; color: var(--wp-text-muted); }
+[data-workplane="three-hint"] { color: var(--wp-text-muted); font-size: 0.8rem; margin: 4px 0 0; }

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ALL_CONTRACTS, BUILTIN_RENDERERS, describeBuiltinCatalog, describeCatalog } from "@bahulam/workplane-ui";
+import { ALL_CONTRACTS, BUILTIN_RENDERERS, describeBuiltinCatalog, describeCatalog, toDescriptor } from "@bahulam/workplane-ui";
 import { createNativeRegistry } from "@bahulam/workplane-ui/react";
 import { echartsRenderer } from "@bahulam/workplane-ui/echarts";
 import { diagramRenderer } from "@bahulam/workplane-ui/diagram";
+import { threeRenderer } from "@bahulam/workplane-ui/three";
 
-const registry = createNativeRegistry().register(echartsRenderer).register(diagramRenderer);
+const registry = createNativeRegistry()
+  .register(echartsRenderer)
+  .register(diagramRenderer)
+  .register(threeRenderer);
 
 /**
  * The host describes the catalog without importing the renderers, because the
@@ -46,7 +50,10 @@ describe("the published catalog matches the renderers that exist", () => {
     // the chart adapter out must not advertise charts.
     const described = describeCatalog(registry.contracts());
     expect(described).toContain("workplane.echarts");
-    expect(describeCatalog(createNativeRegistry().contracts())).not.toContain("workplane.echarts");
+    expect(described).toContain("workplane.three");
+    const native = describeCatalog(createNativeRegistry().contracts());
+    expect(native).not.toContain("workplane.echarts");
+    expect(native).not.toContain("workplane.three");
   });
 
   it("carries trust through to discovery", () => {
@@ -69,8 +76,18 @@ describe("the published catalog matches the renderers that exist", () => {
     const text = describeBuiltinCatalog();
     expect(text).toContain("workplane.markdown");
     expect(text).toContain("workplane.diagram");
-    // A catalog nobody can afford to send is a catalog nobody sends.
-    expect(text.length).toBeLessThan(4000);
+    // A catalog nobody can afford to send is a catalog nobody sends. The whole
+    // vocabulary is the ceiling; a host registering a subset sends less.
+    expect(text.length).toBeLessThan(6000);
+  });
+
+  it("lets no single renderer dominate what the agent is sent", () => {
+    // The per-entry cap is the constraint that actually prevents bloat: a flat
+    // total only fails once, on whoever happens to add the last renderer.
+    const oversized = ALL_CONTRACTS
+      .map((contract) => [contract.id, describeCatalog([toDescriptor(contract)]).length] as const)
+      .filter(([, bytes]) => bytes > 1000);
+    expect(oversized, `entries over 1000 bytes: ${JSON.stringify(oversized)}`).toEqual([]);
   });
 
   it("tells an agent the things it otherwise gets wrong", () => {
