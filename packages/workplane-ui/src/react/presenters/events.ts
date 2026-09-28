@@ -49,14 +49,19 @@ export function useRendererEvents(): (event: RendererEvent, blockId: string) => 
 }
 
 /**
- * Whether the focused element has already claimed the arrow keys.
+ * Whether this element, or anything it sits inside, has already claimed its own
+ * gestures — arrow keys, the wheel, or a drag.
  *
- * A presenter that binds Previous/Next to arrows must not steal them from a
- * text field, a slider, a scrollable table, or an embedded application that
- * orbits a 3D scene. Asking the focused element is the only reliable test —
- * a presenter cannot enumerate every interactive renderer a host installs.
+ * A presenter that binds Previous/Next must not steal from a text field, a
+ * slider, a scrollable table, or an embedded application that orbits a 3D
+ * scene. Asking the element is the only reliable test: a presenter cannot
+ * enumerate every interactive renderer a host might install.
+ *
+ * Called with the FOCUSED element for a key press and with the EVENT TARGET for
+ * a wheel or pointer gesture, because those are the two ways a child can be the
+ * one that should decide.
  */
-export function focusOwnsArrowKeys(element: Element | null): boolean {
+export function claimsGestures(element: Element | null): boolean {
   if (!element) return false;
   const tag = element.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;

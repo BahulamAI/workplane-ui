@@ -17,6 +17,7 @@ import {
 import {
   createNativeRegistry,
   createPresenterRegistry,
+  documentPresenter,
   Presenter,
   WorkplaneProvider,
 } from "@bahulam/workplane-ui/react";
@@ -294,15 +295,50 @@ describe("the agent observes the committed change", () => {
 });
 
 describe("unsupported presentation modes", () => {
+  /**
+   * All three specified modes are now implemented, so the fallback is exercised
+   * with a registry that deliberately declares one unsupported. The property is
+   * what matters and outlives any particular mode: an unavailable presentation
+   * states why and still renders the document, rather than leaving a blank region.
+   */
   it("falls back to Document with a stated reason rather than a blank region", async () => {
     const { controller } = await mount();
+    const registry = createPresenterRegistry().register({
+      mode: "stack",
+      unsupportedReason: "Stack is unavailable in this host's build.",
+      Component: documentPresenter.Component,
+    });
+    cleanup();
+    render(
+      <WorkplaneProvider controller={controller} renderers={createNativeRegistry()}>
+        <Presenter controller={controller} registry={registry} />
+      </WorkplaneProvider>,
+    );
     controller.session.patchViewState({ mode: "stack" });
+
     await waitFor(() => {
-      const notice = screen.getByText(/Stack presentation is specified for milestone M3/);
+      const notice = screen.getByText(/Stack is unavailable in this host's build/);
       expect(notice.textContent).toMatch(/Showing Document instead/);
     });
     // The document is still fully rendered underneath the notice.
     expect(screen.getByRole("heading", { name: "Overview" })).toBeDefined();
+  });
+
+  it("renders every specified mode without a fallback notice", async () => {
+    const { controller } = await mount();
+    for (const mode of ["document", "feed", "stack"] as const) {
+      controller.session.patchViewState({ mode });
+      await waitFor(() => {
+        expect(
+          globalThis.document.querySelector(`[data-mode="${mode}"]`),
+          `${mode} did not render`,
+        ).not.toBeNull();
+      });
+      expect(
+        globalThis.document.querySelector('[data-workplane="unsupported-mode"]'),
+        `${mode} reported itself unsupported`,
+      ).toBeNull();
+    }
   });
 });
 

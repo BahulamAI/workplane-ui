@@ -3,9 +3,11 @@ import { useViewState } from "../hooks.js";
 import type { PresenterDefinition, PresenterProps } from "../registry.js";
 import { documentPresenter } from "./document.js";
 import { feedPresenter } from "./feed.js";
+import { createStackPresenter } from "./stack.js";
 
 export { documentPresenter, feedPresenter };
-export { focusOwnsArrowKeys, useRendererEvents } from "./events.js";
+export { createStackPresenter, stackPresenter } from "./stack.js";
+export { claimsGestures, useRendererEvents } from "./events.js";
 
 export class PresenterRegistry {
   #presenters = new Map<string, PresenterDefinition>();
@@ -25,27 +27,16 @@ export class PresenterRegistry {
 }
 
 /**
- * Stack is specified in the PRD (section 5.4) and scheduled for M3. It is
- * registered here as explicitly unsupported rather than omitted, so a host that
- * requests it gets a stated reason and a working fallback instead of a blank
- * region.
+ * All three presentations of section 5.4.
+ *
+ * `stackDepth` is how a host configures the preview depth "within a safe limit"
+ * per 5.4.4 — decided once, at registration, rather than on every render.
  */
-const NOT_YET_IMPLEMENTED: Record<string, string> = {
-  stack: "Stack presentation is specified for milestone M3 and is not implemented yet.",
-};
-
-export function createPresenterRegistry(): PresenterRegistry {
-  const registry = new PresenterRegistry()
+export function createPresenterRegistry(options?: { stackDepth?: number }): PresenterRegistry {
+  return new PresenterRegistry()
     .register(documentPresenter)
-    .register(feedPresenter);
-  for (const [mode, reason] of Object.entries(NOT_YET_IMPLEMENTED)) {
-    registry.register({
-      mode,
-      unsupportedReason: reason,
-      Component: documentPresenter.Component,
-    });
-  }
-  return registry;
+    .register(feedPresenter)
+    .register(createStackPresenter(options?.stackDepth ? { depth: options.stackDepth } : undefined));
 }
 
 /**

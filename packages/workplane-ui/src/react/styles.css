@@ -232,3 +232,85 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 [data-workplane="history-entries"] time { color: var(--wp-text-muted); font-size: 0.8rem; }
 [data-workplane="history-truncated"], [data-workplane="history-unavailable"] { color: var(--wp-text-muted); font-size: 0.85rem; }
 [data-workplane="history-failure"] { color: var(--wp-error-text); background: var(--wp-error-bg); padding: 8px; border-radius: var(--wp-radius); }
+
+/* --- Stack presentation (section 5.4.4) -----------------------------------
+ *
+ * Depth is CSS perspective on DOM wrappers. No 3D engine takes part in the
+ * navigation; a scene's own 3D content lives inside its block adapter.
+ */
+[data-workplane="stack-rail"] { padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="stack-position"] { margin: 0 0 6px; color: var(--wp-text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+[data-workplane="stack-rail"] ol { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; overflow-x: auto; }
+[data-workplane="stack-rail"] a { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--wp-border); color: var(--wp-text); text-decoration: none; font-size: 0.85rem; white-space: nowrap; }
+[data-workplane="stack-rail"] a[aria-current="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+[data-workplane="stack-rail-index"] { color: var(--wp-text-muted); font-variant-numeric: tabular-nums; }
+
+[data-workplane="stack"] {
+  position: relative;
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+  /* Room for the receding cards to show above the active scene. */
+  padding: 56px var(--wp-gap) var(--wp-gap);
+  min-height: min(70vh, 820px);
+  /* The wheel handler calls preventDefault only once a gesture crosses the
+     threshold, so the browser must not have already committed to scrolling. */
+  overscroll-behavior: contain;
+}
+[data-workplane="stack"]:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+
+[data-workplane="stack-layer"] {
+  --wp-stack-depth: 0;
+  position: absolute;
+  inset: 56px var(--wp-gap) auto;
+  background: var(--wp-bg);
+  border: 1px solid var(--wp-border);
+  border-radius: var(--wp-radius);
+  padding: var(--wp-gap);
+  box-sizing: border-box;
+  transform-origin: 50% 0%;
+  transform:
+    translate3d(0, calc(var(--wp-stack-depth) * -18px), calc(var(--wp-stack-depth) * -120px))
+    scale(calc(1 - var(--wp-stack-depth) * 0.04));
+  /* Deeper cards sit further back in paint order as well as in space. */
+  z-index: calc(100 - var(--wp-stack-depth));
+  transition: transform 220ms ease, opacity 220ms ease;
+  opacity: calc(1 - var(--wp-stack-depth) * 0.18);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
+  max-height: calc(100% - 56px - var(--wp-gap));
+  overflow: hidden;
+}
+[data-workplane="stack-layer"][data-active] {
+  position: relative;
+  inset: auto;
+  opacity: 1;
+  overflow: auto;
+  cursor: auto;
+}
+/* A background card is clickable as a whole, to bring it forward. */
+[data-workplane="stack-layer"]:not([data-active]) { cursor: pointer; }
+
+/* The stack continues beyond the deepest mounted card. */
+[data-workplane="stack-more"] {
+  position: absolute;
+  inset: 8px calc(var(--wp-gap) + 28px) auto;
+  height: 10px;
+  border: 1px solid var(--wp-border);
+  border-bottom: none;
+  border-radius: var(--wp-radius) var(--wp-radius) 0 0;
+  opacity: 0.4;
+  z-index: 90;
+}
+
+[data-workplane="block-preview"] { padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="block-preview"]:last-child { border-bottom: none; }
+[data-workplane="block-preview-title"] { margin: 0; font-weight: 600; font-size: 0.9rem; }
+[data-workplane="block-preview-text"] { margin: 2px 0 0; color: var(--wp-text-muted); font-size: 0.85rem; }
+
+[data-workplane="stack-controls"] { display: flex; gap: 8px; align-items: center; padding: 8px 0; flex-wrap: wrap; }
+[data-workplane="stack-exit"] { margin-inline-start: auto; }
+
+/* A flat transition keeps every navigation available without motion — 5.4. */
+[data-workplane="stack"][data-reduced-motion="true"] [data-workplane="stack-layer"] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  [data-workplane="stack-layer"] { transition: none; }
+}

@@ -6,5 +6,8 @@ export { BlockPrimitive, ScenePrimitive, WorkplanePrimitive, type FallbackReason
 export * from "./registry.js";
 export { Slot } from "./slot.js";
 export * from "./blocks/index.js";
-export { createPresenterRegistry, documentPresenter, Presenter, PresenterRegistry } from "./presenters/index.js";
+export {
+  createPresenterRegistry, createStackPresenter, documentPresenter, feedPresenter,
+  Presenter, PresenterRegistry, stackPresenter,
+} from "./presenters/index.js";
 export { formatCell, describeColumn } from "./blocks/shared.js";

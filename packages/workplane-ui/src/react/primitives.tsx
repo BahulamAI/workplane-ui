@@ -208,6 +208,33 @@ function BlockContent({ onEvent }: { onEvent?: (event: RendererEvent, blockId: s
   );
 }
 
+
+/**
+ * A block as a receding card sees it: what it is, not what it shows.
+ *
+ * Stack requires background layers to be inert previews rather than live
+ * renderers — mounting a chart, a movie, or an iframe per depth layer is exactly
+ * what section 5.4.4 says to avoid. The text is the block's own `fallback`,
+ * which is already required and already written to describe the block, so a
+ * preview needs no new authoring and no thumbnail pipeline. A scene that has
+ * never been drawn still previews correctly.
+ */
+function BlockPreview({ asChild, ...props }: PartProps): ReactNode {
+  const block = useBlockContext();
+  const Element = asChild ? Slot : "div";
+  return (
+    <Element
+      data-workplane="block-preview"
+      data-block-id={block.id}
+      data-renderer-id={block.rendererId}
+      {...props}
+    >
+      <p data-workplane="block-preview-title">{block.title}</p>
+      <p data-workplane="block-preview-text">{block.fallback}</p>
+    </Element>
+  );
+}
+
 export type FallbackReason =
   | "unsupported-renderer"
   | "unsupported-version"
@@ -248,5 +275,6 @@ export const BlockPrimitive = {
   Root: BlockRoot,
   Title: BlockTitle,
   Content: BlockContent,
+  Preview: BlockPreview,
   Fallback: BlockFallback,
 };

@@ -5,7 +5,7 @@ import { useControllerState, useSceneNavigation, useViewState } from "../hooks.j
 import { BlockPrimitive, ScenePrimitive, WorkplanePrimitive } from "../primitives.js";
 import type { PresenterDefinition } from "../registry.js";
 import { HistoryBanner } from "../history.js";
-import { focusOwnsArrowKeys, useRendererEvents } from "./events.js";
+import { claimsGestures, useRendererEvents } from "./events.js";
 
 /**
  * One scene at a time, advanced by sliding — horizontally by default, or
@@ -157,7 +157,7 @@ function FeedPresenter(): React.ReactNode {
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (focusOwnsArrowKeys(globalThis.document?.activeElement ?? null)) return;
+      if (claimsGestures(globalThis.document?.activeElement ?? null)) return;
 
       const forward = axis === "horizontal" ? "ArrowRight" : "ArrowDown";
       const back = axis === "horizontal" ? "ArrowLeft" : "ArrowUp";
