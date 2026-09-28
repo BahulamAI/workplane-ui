@@ -1,4 +1,6 @@
-import type { CommandGateway, CommitResult, WorkplaneDocument } from "../core/index.js";
+import type {
+  CommandGateway, CommitResult, HistoryListing, HistoryPort, RevisionView, WorkplaneDocument,
+} from "../core/index.js";
 import { workplaneError } from "../protocol/index.js";
 import type { Actor, CommittedEvent, Transaction } from "../protocol/index.js";
 import type { BahulamClient } from "./client.js";
@@ -33,7 +35,7 @@ interface CommitResponse {
  * authority. The `actor` argument here is used only for optimistic local
  * provenance where a caller wants it.
  */
-export class HttpCommandGateway implements CommandGateway {
+export class HttpCommandGateway implements CommandGateway, HistoryPort {
   readonly #client: BahulamClient;
   readonly #plugin: string;
   readonly #listeners = new Set<(event: CommittedEvent, document: WorkplaneDocument) => void>();
@@ -126,6 +128,45 @@ export class HttpCommandGateway implements CommandGateway {
     this.#documentId = result.document.id;
     this.#lastSeenRevision = Math.max(this.#lastSeenRevision, result.revision);
     for (const listener of this.#listeners) listener(result.event, result.document);
+    return result;
+  }
+
+
+  // --- HistoryPort (section 5.4.6) ----------------------------------------
+  //
+  // The host reconstructs, not this client: `documentAt` needs a checkpoint at
+  // or before the target revision, and checkpoints live in the host's tables.
+  // Asking the host also means one implementation of replay rather than two
+  // that can disagree about what revision 18 was.
+
+  async entries(documentId: string, options?: { limit?: number }): Promise<HistoryListing> {
+    const limit = options?.limit;
+    const result = await this.#client.get<{
+      entries?: HistoryListing["entries"];
+      historyComplete?: boolean;
+      checkpoints?: number[];
+    }>(`${this.#base()}/history${limit ? `?limit=${limit}` : ""}`);
+    return {
+      entries: result?.entries ?? [],
+      // Absent means the host did not say. Claiming completeness we were not
+      // told about would let the UI present a truncated log as the whole story.
+      historyComplete: result?.historyComplete === true,
+      ...(result?.checkpoints ? { checkpoints: result.checkpoints } : {}),
+    };
+  }
+
+  async at(documentId: string, revision: number): Promise<RevisionView> {
+    void documentId; // one document per plugin boundary; the route carries it
+    const result = await this.#client.get<RevisionView>(
+      `${this.#base()}/revision?at=${revision}`,
+    );
+    if (!result) {
+      return {
+        ok: false,
+        reason: "unavailable",
+        message: "The host did not return revision " + revision + ".",
+      };
+    }
     return result;
   }
 

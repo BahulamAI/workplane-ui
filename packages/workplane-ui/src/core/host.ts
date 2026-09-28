@@ -1,5 +1,7 @@
 import type { JsonValue } from "../protocol/index.js";
 import type { CommandGateway } from "./gateway.js";
+import type { WorkplaneDocument } from "./document.js";
+import type { DocumentDiff } from "./history.js";
 import type { WorkplaneViewState } from "./session.js";
 
 export type JobState =
@@ -50,6 +52,53 @@ export interface JobProvider {
   subscribe(jobId: string, listener: (job: Job) => void): () => void;
 }
 
+/**
+ * Reading the past.
+ *
+ * Optional, like every other host service, because reconstruction needs
+ * checkpoints and only the host has them: `documentAt` refuses without one
+ * rather than guessing, and a client cannot manufacture one from the event log.
+ * A host that cannot serve history makes the History domain unavailable with a
+ * stated reason, which is better than a control that silently shows nothing.
+ */
+export interface HistoryPort {
+  /** Commit log, newest first, bounded by the host. */
+  entries(documentId: string, options?: { limit?: number }): Promise<HistoryListing>;
+  /** The document as it stood at a revision, or a typed refusal. */
+  at(documentId: string, revision: number): Promise<RevisionView>;
+}
+
+export interface HistoryEntry {
+  revision: number;
+  commitId?: string;
+  parentId?: string;
+  actor: { id: string; type: string; label?: string };
+  committedAt: string;
+  /** Operation KINDS, not payloads. A list of what happened, not a diff. */
+  operations: readonly string[];
+}
+
+export interface HistoryListing {
+  entries: readonly HistoryEntry[];
+  /**
+   * False when the log is a bounded fallback rather than the append-only
+   * tables, so the UI can say "as far back as we can see" instead of implying
+   * this is everything.
+   */
+  historyComplete: boolean;
+  /** Revisions that can be reconstructed directly, for honest affordances. */
+  checkpoints?: readonly number[];
+}
+
+export type RevisionView =
+  | { ok: true; document: WorkplaneDocument; diff?: DocumentDiff | null }
+  | {
+      ok: false;
+      reason: "no-checkpoint" | "missing-events" | "replay-failed" | "unavailable";
+      message: string;
+      earliestReachable?: number;
+    };
+
 export interface PreferenceStore {
   /** View preferences persist separately from the business document. */
   read(documentId: string): Promise<Partial<WorkplaneViewState> | undefined>;
@@ -73,6 +122,7 @@ export interface HostServices {
   actions?: ActionBroker;
   artifacts?: ArtifactResolver;
   jobs?: JobProvider;
+  history?: HistoryPort;
   preferences?: PreferenceStore;
   telemetry?: TelemetrySink;
 }

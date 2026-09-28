@@ -196,3 +196,39 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 [data-workplane="three-poster"] { width: 100%; height: 100%; object-fit: contain; display: block; }
 [data-workplane="three-unavailable"] { display: grid; place-items: center; height: 100%; padding: var(--wp-gap); text-align: center; color: var(--wp-text-muted); }
 [data-workplane="three-hint"] { color: var(--wp-text-muted); font-size: 0.8rem; margin: 4px 0 0; }
+
+/* --- History navigation (section 5.4.6) -----------------------------------
+ *
+ * The banner is deliberately loud. A historical document looks exactly like a
+ * live one, and a reader who forgets which they are looking at reads stale
+ * figures as current — that is the failure this styling exists to prevent.
+ */
+[data-workplane="history-banner"] {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 12px; margin-block-end: var(--wp-gap);
+  background: var(--wp-warning-bg); color: var(--wp-warning-text);
+  border: 1px solid currentColor; border-radius: var(--wp-radius);
+}
+[data-workplane="history-banner-text"] { margin: 0; flex: 1 1 auto; min-width: 12rem; }
+[data-workplane="history-banner-actions"] { display: flex; gap: 8px; flex-wrap: wrap; }
+[data-workplane="history-restore-confirm"] { flex: 1 1 100%; border-top: 1px solid currentColor; padding-top: 8px; }
+[data-workplane="history-restore-confirm"] ul { margin: 0 0 8px; padding-inline-start: 1.2em; }
+[data-workplane="history-restore-error"] { color: var(--wp-error-text); background: var(--wp-error-bg); padding: 6px 8px; border-radius: var(--wp-radius); }
+
+[data-workplane="history-domain"] { display: flex; gap: 4px; margin-block-end: 8px; }
+[data-workplane="history-domain"] [role="tab"] { padding: 4px 12px; border: 1px solid var(--wp-border); background: var(--wp-bg); color: var(--wp-text); border-radius: 999px; }
+[data-workplane="history-domain"] [role="tab"][aria-selected="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+
+[data-workplane="history-entries"] { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+[data-workplane="history-entries"] > li > button {
+  display: grid; grid-template-columns: 4rem 1fr auto; gap: 8px; align-items: baseline;
+  width: 100%; text-align: start; padding: 6px 8px; background: none;
+  border: 1px solid transparent; border-radius: var(--wp-radius); color: var(--wp-text); font: inherit;
+}
+[data-workplane="history-entries"] > li > button:hover { background: var(--wp-surface); }
+[data-workplane="history-entries"] > li > button[aria-current="true"] { border-color: var(--wp-accent); }
+[data-workplane="history-revision"] { font-variant-numeric: tabular-nums; color: var(--wp-text-muted); }
+[data-workplane="history-operations"] { grid-column: 1 / -1; color: var(--wp-text-muted); font-size: 0.8rem; font-family: var(--wp-font-mono); }
+[data-workplane="history-entries"] time { color: var(--wp-text-muted); font-size: 0.8rem; }
+[data-workplane="history-truncated"], [data-workplane="history-unavailable"] { color: var(--wp-text-muted); font-size: 0.85rem; }
+[data-workplane="history-failure"] { color: var(--wp-error-text); background: var(--wp-error-bg); padding: 8px; border-radius: var(--wp-radius); }

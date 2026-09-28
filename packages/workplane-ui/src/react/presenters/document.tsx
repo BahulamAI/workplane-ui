@@ -3,6 +3,7 @@ import { useWorkplaneContext } from "../context.js";
 import { useControllerState, useSceneOrder, useViewState } from "../hooks.js";
 import { BlockPrimitive, ScenePrimitive, WorkplanePrimitive } from "../primitives.js";
 import type { PresenterDefinition } from "../registry.js";
+import { HistoryBanner } from "../history.js";
 import { useRendererEvents } from "./events.js";
 
 /**
@@ -18,9 +19,13 @@ function SceneNavigator(): React.ReactNode {
   const { controller } = useWorkplaneContext();
   const view = useViewState();
 
-  if (sceneOrder.length < 2) return null;
-
   /**
+   * Declared BEFORE the early return below. A hook after a conditional return
+   * is only latent until the condition can change at runtime: entering a
+   * historical revision, or committing `scene.remove`, drops the count below
+   * two and React then sees fewer hooks than the previous render and tears the
+   * tree down.
+   *
    * Scroll explicitly rather than relying on the browser to honour the
    * fragment.
    *
@@ -53,6 +58,8 @@ function SceneNavigator(): React.ReactNode {
     },
     [controller, view.reducedMotion],
   );
+
+  if (sceneOrder.length < 2) return null;
 
   return (
     /* Ordinary links, not a tablist: these do not switch panels, they jump
@@ -91,6 +98,7 @@ function DocumentPresenter(): React.ReactNode {
         </WorkplanePrimitive.IfStale>
       </header>
 
+      <HistoryBanner />
       <SceneNavigator />
 
       <WorkplanePrimitive.IfEmpty>

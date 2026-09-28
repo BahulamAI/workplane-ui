@@ -4,6 +4,7 @@ import { ActivityProvider, SceneProvider, useWorkplaneContext } from "../context
 import { useControllerState, useSceneNavigation, useViewState } from "../hooks.js";
 import { BlockPrimitive, ScenePrimitive, WorkplanePrimitive } from "../primitives.js";
 import type { PresenterDefinition } from "../registry.js";
+import { HistoryBanner } from "../history.js";
 import { focusOwnsArrowKeys, useRendererEvents } from "./events.js";
 
 /**
@@ -189,6 +190,7 @@ function FeedPresenter(): React.ReactNode {
         </WorkplanePrimitive.IfStale>
       </header>
 
+      <HistoryBanner />
       <SceneRail />
 
       <WorkplanePrimitive.IfEmpty>
