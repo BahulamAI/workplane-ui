@@ -11,3 +11,4 @@ export {
   Presenter, PresenterRegistry, stackPresenter,
 } from "./presenters/index.js";
 export { formatCell, describeColumn } from "./blocks/shared.js";
+export { ResultBlock, type ResultBlockProps } from "./result-block.js";

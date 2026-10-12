@@ -65,7 +65,7 @@ function bindData(spec: EChartsSpec, result: QueryResult | undefined): Bound {
       const id = String(row[entityIndex === -1 ? categoryIndex : entityIndex] ?? rowIndex);
       if (binding.index === spec.bind!.series[0]!.index) entities[rowIndex] = id;
       return {
-        value: Number(row[valueIndex] ?? 0),
+        value: row[valueIndex] == null ? null : Number(row[valueIndex]),
         ...(categoryIndex !== -1 ? { name: String(row[categoryIndex] ?? "") } : {}),
       };
     }) as unknown as JsonValue;
