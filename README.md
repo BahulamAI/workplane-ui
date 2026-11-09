@@ -15,6 +15,13 @@ runtime dependency.
 > Everything else in [the PRD](docs/prd/) is a proposed contract, not a shipped
 > feature. See [Milestones](#milestones) for what is and is not built.
 
+## Chat integration
+
+The portable chat-chart contract and web/offline-mobile renderer are implemented.
+See [chat integration](docs/chat-integration.md) for the agent tool catalogue and
+independent package release workflow. The milestone table below predates newer
+source implementations and is not a complete feature inventory.
+
 ## Quick start — no key, no network, no account
 
 ```bash

@@ -130,3 +130,10 @@ of a command, it fails the suite.
 
 Apache-2.0. Source, issues, and docs:
 <https://github.com/BahulamAI/workplane-ui>
+
+
+## Portable chat entry points
+
+`/chat` exports the data-only chart contract; `/chat/react` renders it in React;
+`/chat/browser` mounts the same engine in an offline WebView. Versioned chart types,
+themes and the agent tool schema are maintained in this package.

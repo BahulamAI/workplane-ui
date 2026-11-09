@@ -1,6 +1,6 @@
 {
   "name": "@bahulam/workplane-ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Persistent interactive workspaces for people and agents \u2014 headless document authority with a React reference shell",
   "license": "Apache-2.0",
   "type": "module",
@@ -61,11 +61,25 @@
     "./three": {
       "types": "./dist/three.d.ts",
       "default": "./dist/three.js"
+    },
+    "./chat": {
+      "types": "./dist/chat.d.ts",
+      "default": "./dist/chat.js"
+    },
+    "./chat/react": {
+      "types": "./dist/chat-react.d.ts",
+      "default": "./dist/chat-react.js"
+    },
+    "./chat/browser": {
+      "types": "./dist/chat-browser.d.ts",
+      "default": "./dist/chat-browser.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -b && cp src/react/styles.css dist/styles.css",
