@@ -1,9 +1,9 @@
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart } from 'echarts/charts';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart, TreemapChart, SunburstChart, TreeChart, SankeyChart, GraphChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem } from './contract.js';
-echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart,
+import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem, type HierarchyNode, type GraphSeries } from './contract.js';
+echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart, TreemapChart, SunburstChart, TreeChart, SankeyChart, GraphChart,
   GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
@@ -385,6 +385,65 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
           itemStyle: { color: colorFor(it, i) }, data: items.map((_, r) => (r === i ? it.high - it.low : null)) },
       ];
     });
+    return option;
+  }
+  if ((HIERARCHY_CHART_TYPES as readonly string[]).includes(type)) {
+    // Validated recursive {name, value?, children?} nodes, passed straight
+    // through: ECharts' own treemap/sunburst/tree data shape already
+    // matches ours exactly, so there is nothing to transform.
+    const nodes = payload.series as HierarchyNode[];
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
+      legend: { show: false },
+    };
+    if (type === 'treemap') {
+      option.series = [{ type: 'treemap', data: nodes, label: { color: text },
+        breadcrumb: { show: false }, itemStyle: { borderColor: dark ? '#0f172a' : '#ffffff' } }];
+    } else if (type === 'sunburst') {
+      option.series = [{ type: 'sunburst', data: nodes, label: { color: text },
+        itemStyle: { borderColor: dark ? '#0f172a' : '#ffffff', borderWidth: 1 } }];
+    } else {
+      // tree: validated to be exactly one root.
+      option.series = [{ type: 'tree', data: nodes, label: { color: text, position: 'top' },
+        lineStyle: { color: grid }, itemStyle: { color: color[0] },
+        leaves: { label: { position: 'right', color: text } }, initialTreeDepth: -1 }];
+    }
+    return option;
+  }
+  if ((NETWORK_CHART_TYPES as readonly string[]).includes(type)) {
+    // Validated to be exactly one combined {nodes, links} graph.
+    const g = payload.series[0] as GraphSeries;
+    const nameOf = new Map(g.nodes.map(n => [n.id, n.name ?? n.id]));
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
+    };
+    if (type === 'sankey') {
+      option.legend = { show: false };
+      option.series = [{ type: 'sankey', emphasis: { focus: 'adjacency' },
+        data: g.nodes.map(n => ({ name: nameOf.get(n.id) })),
+        links: g.links.map(l => ({ source: nameOf.get(l.source), target: nameOf.get(l.target), value: l.value })),
+        label: { color: text }, lineStyle: { color: 'gradient', opacity: 0.4 },
+        itemStyle: { color: color[0], borderColor: grid } }];
+    } else {
+      // graph (node-link, force-directed).
+      const categories = [...new Set(g.nodes.map(n => n.category).filter((c): c is string => c !== undefined))];
+      option.legend = { show: categories.length > 0, type: 'scroll', bottom: 0, textStyle: { color: text }, data: categories };
+      option.series = [{ type: 'graph', layout: 'force', roam: true, label: { show: true, color: text },
+        categories: categories.map(c => ({ name: c })),
+        data: g.nodes.map(n => ({ name: nameOf.get(n.id), value: n.value,
+          symbolSize: n.value !== undefined ? Math.max(8, Math.min(50, Math.sqrt(n.value) * 4)) : 20,
+          ...(n.category !== undefined ? { category: categories.indexOf(n.category) } : { itemStyle: { color: color[0] } }) })),
+        links: g.links.map(l => ({ source: nameOf.get(l.source), target: nameOf.get(l.target),
+          lineStyle: { width: l.value !== undefined ? Math.max(1, Math.min(6, l.value)) : 1 } })),
+        lineStyle: { color: grid, curveness: 0.1 },
+        force: { repulsion: 100, edgeLength: 80 } }];
+    }
     return option;
   }
   const multi = 'name' in payload.series[0]!;

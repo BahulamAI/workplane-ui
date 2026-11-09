@@ -22,7 +22,8 @@ stacked_area_100, sparkline, pie, donut, rose, pareto, waterfall, funnel,
 pyramid, waffle, scatter, bubble, scatter_trend, histogram, box_plot, density,
 ecdf, strip_plot, beeswarm, scatter_matrix, correlation_matrix,
 parallel_coordinates, radar, polar_bar, gauge, bullet, progress, heatmap,
-calendar_heatmap, candlestick, drawdown, cumulative_return, gantt. The `_100`
+calendar_heatmap, candlestick, drawdown, cumulative_return, gantt, treemap,
+sunburst, tree, sankey, graph. The `_100`
 variants normalize each category's series to percentages of what is present,
 without treating an absent series as a zero contributor.
 Sparklines reuse the line/area data shape with axes and legend hidden.
@@ -123,17 +124,44 @@ Gantt, milestone, and interval/range bars, and plain timelines, as one type
 rather than four. `group` optionally colors rows together and groups the
 legend; up to 50 rows.
 
-marimekko and violin are intentionally not included. A true variable-width
-mekko chart needs ECharts' `custom` series with a `renderItem` function,
-which this engine deliberately avoids everywhere else in favor of purely
-declarative series (see the range_area/dumbbell/waterfall/error_bar comments
-in `engine.ts`). Violin needs a density curve mirrored sideways around each
-category's center, which would need stacking along a value axis in an
-orientation this engine hasn't verified ECharts actually supports
-declaratively — and unlike every other type here, that assumption can't be
-checked by this test suite, since it only inspects the resulting option
-object, never real rendering. Revisit either if a concrete need comes up and
-there's a way to verify the rendering.
+treemap, sunburst and tree take recursive `{name, value?, children?}` nodes
+— a leaf (no `children`) needs its own `value` to be sized by; a branch's
+`value` is optional, since ECharts sums its children. treemap/sunburst
+happily lay out several top-level nodes side by side (up to 20); tree draws
+one rooted layout, so it requires exactly one root. All three pass the
+nodes straight through with no transform at all: ECharts' own data shape
+for these series already matches ours exactly.
+
+sankey and graph (node-link) take one combined `{nodes, links}` graph per
+chart (not a per-category series) — `nodes[].id` identifies a node to
+links, `name` (falling back to `id`) is both the ECharts node identity and
+its displayed label, so two nodes resolving to the same effective name are
+rejected (they would silently merge in the rendered graph). sankey requires
+every link's `value` (it sizes the flow's ribbon width); graph does not —
+link `value`, when given, only affects line width. graph uses a
+force-directed layout with optional `category` per node for legend
+grouping and coloring, and node size scaled by `sqrt(value)` so area (not
+radius) is proportional, same convention as bubble.
+
+marimekko, violin, icicle, circle_packing, chord, and alluvial-as-a-
+separate-type are intentionally not included. A true variable-width mekko
+chart needs ECharts' `custom` series with a `renderItem` function, which
+this engine deliberately avoids everywhere else in favor of purely
+declarative series (see the range_area/dumbbell/waterfall/error_bar/gantt
+comments in `engine.ts`). Icicle and circle_packing have no native ECharts
+series either, and the same `custom`-series concern applies to a faithful
+implementation of either. Chord diagrams need curved ribbon widths
+proportional to flow, which ECharts has no native series for; `graph`'s
+circular layout is visually different and would misrepresent itself as a
+chord diagram if offered under that name. Alluvial is the same underlying
+visual as sankey (flow between stages over time), so it is covered by
+`sankey` rather than added as a second type. Violin needs a density curve
+mirrored sideways around each category's center, which would need stacking
+along a value axis in an orientation this engine hasn't verified ECharts
+actually supports declaratively — and unlike every other type here, that
+assumption can't be checked by this test suite, since it only inspects the
+resulting option object, never real rendering. Revisit any of these if a
+concrete need comes up (and, for violin, a way to verify the rendering).
 
 Themes: default, minimal, presentation, high_contrast. Appearance: auto,
 light, dark. Use numeric x/y points for scatter. `auto` follows the device's

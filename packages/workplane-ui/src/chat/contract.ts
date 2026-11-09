@@ -1,6 +1,15 @@
 /** Portable, data-only chat chart contract. No React, DOM or execution code. */
 export const CHART_CONTRACT_VERSION = 'workplane.chat-chart/1' as const;
-export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress', 'heatmap', 'calendar_heatmap', 'candlestick', 'drawdown', 'cumulative_return', 'gantt'] as const;
+export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress', 'heatmap', 'calendar_heatmap', 'candlestick', 'drawdown', 'cumulative_return', 'gantt', 'treemap', 'sunburst', 'tree', 'sankey', 'graph'] as const;
+// Hierarchy: a recursive {name, value?, children?} node, not a flat series —
+// the whole point is nesting. tree additionally requires exactly one root
+// (ECharts' tree series draws one rooted layout, unlike treemap/sunburst,
+// which happily lay out several top-level nodes side by side).
+export const HIERARCHY_CHART_TYPES = ['treemap', 'sunburst', 'tree'] as const;
+// Flow/network: one combined {nodes, links} graph, not a per-category
+// series — sankey needs a value per link (it sizes the flow width);
+// graph (node-link) does not.
+export const NETWORK_CHART_TYPES = ['sankey', 'graph'] as const;
 // Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
 // or {name, values} wrapper — there is only ever one measurement per name.
 export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
@@ -39,10 +48,21 @@ export interface OhlcSeries { name: string; points: { x: string | number; open: 
 // describes it with x_label). `low === high` renders as a milestone marker
 // instead of a bar, so a pure timeline of events is just every row being one.
 export interface IntervalItem { name: string; low: number; high: number; group?: string }
+// Used by treemap/sunburst/tree: a leaf (no `children`) needs a `value` to
+// be sized by; a branch's value is optional (ECharts sums its children).
+export interface HierarchyNode { name: string; value?: number; children?: HierarchyNode[] }
+// Used by sankey/graph: one combined graph per chart. `name` defaults to
+// `id` for both node identity in links and the displayed label. sankey
+// requires every link's `value` (it sizes the flow); graph does not.
+export interface GraphSeries {
+  name?: string;
+  nodes: { id: string; name?: string; value?: number; category?: string }[];
+  links: { source: string; target: string; value?: number }[];
+}
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
-  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[] | IntervalItem[]; observations?: string[];
+  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[] | IntervalItem[] | HierarchyNode[] | GraphSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
@@ -100,15 +120,31 @@ const ohlcMulti = { type: 'object', additionalProperties: false, required: ['nam
 const intervalItem = { type: 'object', additionalProperties: false, required: ['name', 'low', 'high'], properties: {
   name: text, low: { type: 'number' }, high: { type: 'number' }, group: text,
 } };
+// Used by treemap/sunburst/tree. The real depth/count bounds live in the
+// semantic validator (validateChatChart) — recursive bounds don't express
+// cleanly as a plain JSON Schema hint without $ref, so this stays shallow.
+const hierarchyNode = { type: 'object', additionalProperties: false, required: ['name'], properties: {
+  name: text, value: { type: 'number', minimum: 0 }, children: { type: 'array', minItems: 1, items: {} },
+} };
+// Used by sankey/graph: one combined graph per chart.
+const graphSeries = { type: 'object', additionalProperties: false, required: ['nodes', 'links'], properties: {
+  name: text,
+  nodes: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['id'], properties: {
+    id: text, name: text, value: { type: 'number', minimum: 0 }, category: text,
+  } } },
+  links: { type: 'array', minItems: 1, maxItems: 300, items: { type: 'object', additionalProperties: false, required: ['source', 'target'], properties: {
+    source: text, target: text, value: { type: 'number', minimum: 0 },
+  } } },
+} };
 export const chartToolSchema = {
   type: 'object', additionalProperties: false, required: ['chart_type', 'series'], properties: {
     chart_type: { type: 'string', enum: CHART_TYPES }, title: text, x_label: text, y_label: text,
-    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem, heatmapMulti, ohlcMulti, intervalItem] } },
+    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem, heatmapMulti, ohlcMulti, intervalItem, hierarchyNode, graphSeries] } },
     observations: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 1000 } },
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
   },
   allOf: [{
-    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', 'gantt', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES] } } }, required: ['chart_type'] },
+    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', 'gantt', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES, ...HIERARCHY_CHART_TYPES, ...NETWORK_CHART_TYPES] } } }, required: ['chart_type'] },
     then: { properties: { series: { items: { anyOf: [point, multi] } } } },
   }, {
     if: { properties: { chart_type: { const: 'bubble' } }, required: ['chart_type'] },
@@ -122,6 +158,15 @@ export const chartToolSchema = {
   }, {
     if: { properties: { chart_type: { const: 'gantt' } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 50, items: intervalItem } } },
+  }, {
+    if: { properties: { chart_type: { enum: HIERARCHY_CHART_TYPES } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 20, items: hierarchyNode } } },
+  }, {
+    if: { properties: { chart_type: { const: 'tree' } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 1 } } },
+  }, {
+    if: { properties: { chart_type: { enum: NETWORK_CHART_TYPES } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 1, items: graphSeries } } },
   }, {
     if: { properties: { chart_type: { enum: TARGET_CHART_TYPES } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 6, items: targetItem } } },
@@ -195,6 +240,10 @@ export const chartCatalog = {
     { types: ['drawdown'], purpose: 'Show percentage decline from the running peak of a value series over time; reuses the line/area data shape, always nonpositive by construction.', status: 'supported' },
     { types: ['cumulative_return'], purpose: 'Show compounded growth from a series of periodic returns (e.g. 0.02 for +2%), not price levels; reuses the line/area data shape.', status: 'supported' },
     { types: ['gantt'], purpose: 'Show tasks as horizontal bars spanning low-high on a numeric timeline (not a calendar date axis), one row per task; a row with low === high draws a milestone marker instead, so a plain timeline of events is just every row being one. Up to 50 rows; group optionally colors rows together.', status: 'supported' },
+    { types: ['treemap', 'sunburst'], purpose: 'Show a nested hierarchy (recursive {name, value?, children?} nodes; a leaf needs value, a branch sums its children) as nested rectangles (treemap) or nested rings (sunburst); several top-level nodes are fine.', status: 'supported' },
+    { types: ['tree'], purpose: 'Show a nested hierarchy as a rooted node-link layout (dendrogram); exactly one top-level root, since a rooted layout cannot draw several trees at once.', status: 'supported' },
+    { types: ['sankey'], purpose: "Show weighted flow between stages as proportionally-sized ribbons; one combined {nodes, links} graph, every link needs a nonnegative value since it sizes the flow's width.", status: 'supported' },
+    { types: ['graph'], purpose: 'Show a node-link network (force-directed layout); one combined {nodes, links} graph, link value is optional and only affects line width, not required the way sankey needs it.', status: 'supported' },
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
   instructions: 'Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.',
@@ -367,6 +416,73 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
       if (!label(it.name) || !finite(it.low) || !finite(it.high) || (it.low as number) > (it.high as number)) return null;
       if (Object.keys(it).some(k => !['name', 'low', 'high', 'group'].includes(k))) return null;
       if (it.group !== undefined && !label(it.group)) return null;
+    }
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
+  // Hierarchy: each top-level series item is itself a recursive node, not
+  // a {name, points}/{name, values} wrapper. tree additionally needs
+  // exactly one root (see the const's own comment above).
+  if ((HIERARCHY_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) {
+    if (p.series.length > 20) return null;
+    if (p.chart_type === 'tree' && p.series.length !== 1) return null;
+    let nodeCount = 0;
+    const validNode = (node: unknown, depth: number): boolean => {
+      nodeCount++;
+      if (nodeCount > 1000 || depth > 6 || !node || typeof node !== 'object') return false;
+      const n = node as Record<string, unknown>;
+      if (Object.keys(n).some(k => !['name', 'value', 'children'].includes(k))) return false;
+      if (!label(n.name)) return false;
+      if (n.value !== undefined && (!finite(n.value) || (n.value as number) < 0)) return false;
+      if (n.children !== undefined) {
+        if (!Array.isArray(n.children) || !n.children.length || n.children.length > 50) return false;
+        return (n.children as unknown[]).every(c => validNode(c, depth + 1));
+      }
+      // A leaf with no children needs its own value to be sized by.
+      return n.value !== undefined;
+    };
+    if (!p.series.every(n => validNode(n, 1))) return null;
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
+  // Flow/network: one combined {nodes, links} graph per chart, not a
+  // per-category series.
+  if ((NETWORK_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) {
+    if (p.series.length !== 1) return null;
+    const g = p.series[0] as Record<string, unknown>;
+    if (!g || typeof g !== 'object' || Object.keys(g).some(k => !['name', 'nodes', 'links'].includes(k))) return null;
+    if (g.name !== undefined && !label(g.name)) return null;
+    if (!Array.isArray(g.nodes) || !g.nodes.length || g.nodes.length > 100) return null;
+    const ids = new Set<string>(), names = new Set<string>();
+    for (const n of g.nodes) {
+      if (!n || typeof n !== 'object') return null;
+      const nd = n as Record<string, unknown>;
+      if (Object.keys(nd).some(k => !['id', 'name', 'value', 'category'].includes(k))) return null;
+      if (!label(nd.id) || ids.has(nd.id as string)) return null;
+      ids.add(nd.id as string);
+      if (nd.name !== undefined && !label(nd.name)) return null;
+      // The effective display name (name, falling back to id) is what
+      // identifies a node to ECharts; two nodes resolving to the same one
+      // would silently merge in the rendered graph.
+      const effective = typeof nd.name === 'string' ? nd.name : (nd.id as string);
+      if (names.has(effective)) return null;
+      names.add(effective);
+      if (nd.value !== undefined && (!finite(nd.value) || (nd.value as number) < 0)) return null;
+      if (nd.category !== undefined && !label(nd.category)) return null;
+    }
+    if (!Array.isArray(g.links) || !g.links.length || g.links.length > 300) return null;
+    for (const l of g.links) {
+      if (!l || typeof l !== 'object') return null;
+      const ln = l as Record<string, unknown>;
+      if (Object.keys(ln).some(k => !['source', 'target', 'value'].includes(k))) return null;
+      if (!label(ln.source) || !ids.has(ln.source as string)) return null;
+      if (!label(ln.target) || !ids.has(ln.target as string)) return null;
+      // sankey sizes a flow's ribbon width by value; without one there is
+      // nothing to draw. graph (node-link) has no such requirement.
+      if (p.chart_type === 'sankey' && !finite(ln.value)) return null;
+      if (ln.value !== undefined && (!finite(ln.value) || (ln.value as number) < 0)) return null;
     }
     try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
     return value as ChatChartPresentation;

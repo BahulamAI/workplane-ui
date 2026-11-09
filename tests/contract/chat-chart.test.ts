@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
+import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
 import { chartOption } from '../../packages/workplane-ui/src/chat/engine';
 // Most types accept the plain {label, value} shape; a few need a shape that
 // shows what makes them distinct (range_area/error_bar's bounds, dumbbell's
@@ -16,6 +16,8 @@ const fixtureFor = (chart_type: string) =>
   : chart_type === 'calendar_heatmap' ? [{label:'2026-01-01',value:5},{label:'2026-01-02',value:9}]
   : chart_type === 'candlestick' ? [{name:'ACME',points:[{x:'2026-01-01',open:10,high:12,low:9,close:11}]}]
   : chart_type === 'gantt' ? [{name:'Design',low:0,high:5},{name:'Kickoff',low:0,high:0}]
+  : (HIERARCHY_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'root',children:[{name:'a',value:1},{name:'b',value:2}]}]
+  : (NETWORK_CHART_TYPES as readonly string[]).includes(chart_type) ? [{nodes:[{id:'a'},{id:'b'}],links:[{source:'a',target:'b',value:1}]}]
   : [{label:'A',value:5},{label:'B',value:9}];
 describe('portable chat chart contract', () => {
   for (const chart_type of CHART_TYPES) it(`renders ${chart_type} as a supported ECharts option`, () => {
@@ -425,6 +427,47 @@ describe('portable chat chart contract', () => {
     const buildSpan=series.find(s=>s.name==='dev' && s.type==='bar');
     expect(buildSpan.data).toEqual([null,7,null]);
     expect(buildSpan.itemStyle.color).toBe(kickoff.itemStyle.color); // same group, same color
+  });
+  it('rejects a hierarchy leaf with no value, and more than one tree root', () => {
+    const leaf={schema_version:'bahulam_render_v1',type:'chart',chart_type:'treemap',
+      series:[{name:'root',children:[{name:'a'}]}]}; // leaf 'a' has neither value nor children
+    expect(validateChatChart(leaf)).toBeNull();
+    const twoRoots={schema_version:'bahulam_render_v1',type:'chart',chart_type:'tree',
+      series:[{name:'r1',value:1},{name:'r2',value:1}]};
+    expect(validateChatChart(twoRoots)).toBeNull();
+  });
+  it('passes treemap/sunburst/tree nodes straight through with no transform', () => {
+    for (const chart_type of ['treemap','sunburst']) {
+      const payload={schema_version:'bahulam_render_v1',type:'chart',chart_type,
+        series:[{name:'root',children:[{name:'a',value:3},{name:'b',value:5}]}]};
+      const chart=validateChatChart(payload)!;
+      expect((chartOption(chart).series as any[])[0].data).toEqual(payload.series);
+    }
+    const tree=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'tree',
+      series:[{name:'root',children:[{name:'a',value:1}]}]});
+    expect((chartOption(tree!).series as any[])[0].type).toBe('tree');
+  });
+  it('rejects a network link to an unknown node, a valueless sankey link, and a duplicate display name', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'graph'};
+    expect(validateChatChart({...base,series:[{nodes:[{id:'a'}],links:[{source:'a',target:'zzz',value:1}]}]})).toBeNull();
+    expect(validateChatChart({...base,chart_type:'sankey',series:[{nodes:[{id:'a'},{id:'b'}],links:[{source:'a',target:'b'}]}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{nodes:[{id:'a'},{id:'b'}],links:[{source:'a',target:'b'}]}]})).not.toBeNull(); // graph allows a valueless link
+    expect(validateChatChart({...base,series:[{nodes:[{id:'a',name:'X'},{id:'b',name:'X'}],links:[{source:'a',target:'b'}]}]})).toBeNull();
+  });
+  it('maps sankey node ids to display names consistently between data and links', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'sankey',series:[
+      {nodes:[{id:'a',name:'Alpha'},{id:'b'}],links:[{source:'a',target:'b',value:5}]}]});
+    const series=(chartOption(chart!).series as any[])[0];
+    expect(series.data).toEqual([{name:'Alpha'},{name:'b'}]);
+    expect(series.links).toEqual([{source:'Alpha',target:'b',value:5}]);
+  });
+  it('sizes graph nodes by sqrt(value) and assigns categories by index', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'graph',series:[
+      {nodes:[{id:'a',category:'cat1',value:4},{id:'b',category:'cat1'}],links:[{source:'a',target:'b'}]}]});
+    const series=(chartOption(chart!).series as any[])[0];
+    expect(series.data[0].symbolSize).toBe(8); // sqrt(4)*4 = 8, within [8,50]
+    expect(series.data[0].category).toBe(0);
+    expect(series.links[0].lineStyle.width).toBe(1); // no value given -> default width
   });
 });
 
