@@ -22,7 +22,7 @@ stacked_area_100, sparkline, pie, donut, rose, pareto, waterfall, funnel,
 pyramid, waffle, scatter, bubble, scatter_trend, histogram, box_plot, density,
 ecdf, strip_plot, beeswarm, scatter_matrix, correlation_matrix,
 parallel_coordinates, radar, polar_bar, gauge, bullet, progress, heatmap,
-calendar_heatmap, candlestick, drawdown, cumulative_return. The `_100`
+calendar_heatmap, candlestick, drawdown, cumulative_return, gantt. The `_100`
 variants normalize each category's series to percentages of what is present,
 without treating an absent series as a zero contributor.
 Sparklines reuse the line/area data shape with axes and legend hidden.
@@ -112,6 +112,16 @@ order. Drawdown's `y` is a price/equity level; its output is percentage
 decline from the running peak (always ≤ 0). Cumulative_return's `y` is a
 *periodic return* (0.02 for +2%), not a price level; its output is
 compounded growth as a percentage.
+
+gantt takes a flat `{name, low, high, group?}` row per task — never a
+series of points, since a task has exactly one span. The axis is a plain
+numeric timeline, not a calendar date axis; the caller picks the unit (e.g.
+days since project start) and names it with `x_label`. A row with
+`low === high` draws a diamond milestone marker instead of a bar, so a pure
+chronological timeline of events is just every row being one — covering
+Gantt, milestone, and interval/range bars, and plain timelines, as one type
+rather than four. `group` optionally colors rows together and groups the
+legend; up to 50 rows.
 
 marimekko and violin are intentionally not included. A true variable-width
 mekko chart needs ECharts' `custom` series with a `renderItem` function,

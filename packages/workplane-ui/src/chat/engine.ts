@@ -2,7 +2,7 @@ import * as echarts from 'echarts/core';
 import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries } from './contract.js';
+import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem } from './contract.js';
 echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart,
   GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent, SVGRenderer]);
 const palettes = {
@@ -356,6 +356,34 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
           : null)),
       });
       return bars;
+    });
+    return option;
+  }
+  if (type === 'gantt') {
+    // Validated to always be the flat {name, low, high, group?} shape.
+    const items = payload.series as IntervalItem[];
+    const groups = [...new Set(items.map(it => it.group).filter((g): g is string => g !== undefined))];
+    const colorFor = (it: IntervalItem, i: number) => (it.group ? color[groups.indexOf(it.group) % color.length]! : color[i % color.length]!);
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
+      legend: { show: groups.length > 0, type: 'scroll', bottom: 0, textStyle: { color: text }, data: groups },
+      xAxis: { type: 'value', name: payload.x_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } },
+      yAxis: { type: 'category', data: items.map(it => it.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } },
+    };
+    option.series = items.flatMap((it, i): Record<string, unknown>[] => {
+      // A zero-duration row is a milestone: a marker, not a bar.
+      if (it.low === it.high) return [{ name: it.group ?? it.name, type: 'scatter', symbol: 'diamond',
+        symbolSize: 14, itemStyle: { color: colorFor(it, i) }, data: [[it.low, i]] }];
+      return [
+        // Same invisible-base-plus-span trick used throughout this file.
+        { name: `${it.name} base`, type: 'bar', stack: `gantt-${i}`, stackStrategy: 'all', barWidth: 14,
+          itemStyle: { opacity: 0 }, data: items.map((_, r) => (r === i ? it.low : null)), tooltip: { show: false }, silent: true },
+        { name: it.group ?? it.name, type: 'bar', stack: `gantt-${i}`, stackStrategy: 'all', barWidth: 14,
+          itemStyle: { color: colorFor(it, i) }, data: items.map((_, r) => (r === i ? it.high - it.low : null)) },
+      ];
     });
     return option;
   }

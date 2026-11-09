@@ -1,6 +1,6 @@
 /** Portable, data-only chat chart contract. No React, DOM or execution code. */
 export const CHART_CONTRACT_VERSION = 'workplane.chat-chart/1' as const;
-export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress', 'heatmap', 'calendar_heatmap', 'candlestick', 'drawdown', 'cumulative_return'] as const;
+export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress', 'heatmap', 'calendar_heatmap', 'candlestick', 'drawdown', 'cumulative_return', 'gantt'] as const;
 // Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
 // or {name, values} wrapper — there is only ever one measurement per name.
 export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
@@ -34,10 +34,15 @@ export interface TargetSeries { name: string; value: number; min?: number; max?:
 export interface HeatmapSeries { name: string; cells: { x: string; y: string; value: number }[] }
 // Used by candlestick: one OHLC bar per x, with an optional traded volume.
 export interface OhlcSeries { name: string; points: { x: string | number; open: number; high: number; low: number; close: number; volume?: number }[] }
+// Used by gantt: one row per named task on a numeric timeline (not a date
+// axis — the caller picks the unit, e.g. days since project start, and
+// describes it with x_label). `low === high` renders as a milestone marker
+// instead of a bar, so a pure timeline of events is just every row being one.
+export interface IntervalItem { name: string; low: number; high: number; group?: string }
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
-  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[]; observations?: string[];
+  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[] | IntervalItem[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
@@ -91,15 +96,19 @@ const ohlcMulti = { type: 'object', additionalProperties: false, required: ['nam
       low: { type: 'number' }, close: { type: 'number' }, volume: { type: 'number', minimum: 0 } },
   } },
 } };
+// Used by gantt: one flat {name, low, high, group?} row per task/event.
+const intervalItem = { type: 'object', additionalProperties: false, required: ['name', 'low', 'high'], properties: {
+  name: text, low: { type: 'number' }, high: { type: 'number' }, group: text,
+} };
 export const chartToolSchema = {
   type: 'object', additionalProperties: false, required: ['chart_type', 'series'], properties: {
     chart_type: { type: 'string', enum: CHART_TYPES }, title: text, x_label: text, y_label: text,
-    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem, heatmapMulti, ohlcMulti] } },
+    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem, heatmapMulti, ohlcMulti, intervalItem] } },
     observations: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 1000 } },
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
   },
   allOf: [{
-    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES] } } }, required: ['chart_type'] },
+    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', 'gantt', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES] } } }, required: ['chart_type'] },
     then: { properties: { series: { items: { anyOf: [point, multi] } } } },
   }, {
     if: { properties: { chart_type: { const: 'bubble' } }, required: ['chart_type'] },
@@ -110,6 +119,9 @@ export const chartToolSchema = {
   }, {
     if: { properties: { chart_type: { const: 'candlestick' } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 6, items: ohlcMulti } } },
+  }, {
+    if: { properties: { chart_type: { const: 'gantt' } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 50, items: intervalItem } } },
   }, {
     if: { properties: { chart_type: { enum: TARGET_CHART_TYPES } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 6, items: targetItem } } },
@@ -182,6 +194,7 @@ export const chartCatalog = {
     { types: ['candlestick'], purpose: 'Show open/high/low/close per period (e.g. trading day), optionally with a traded volume overlay on a second axis colored by up/down.', status: 'supported' },
     { types: ['drawdown'], purpose: 'Show percentage decline from the running peak of a value series over time; reuses the line/area data shape, always nonpositive by construction.', status: 'supported' },
     { types: ['cumulative_return'], purpose: 'Show compounded growth from a series of periodic returns (e.g. 0.02 for +2%), not price levels; reuses the line/area data shape.', status: 'supported' },
+    { types: ['gantt'], purpose: 'Show tasks as horizontal bars spanning low-high on a numeric timeline (not a calendar date axis), one row per task; a row with low === high draws a milestone marker instead, so a plain timeline of events is just every row being one. Up to 50 rows; group optionally colors rows together.', status: 'supported' },
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
   instructions: 'Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.',
@@ -339,6 +352,21 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
           prev = edge as number;
         }
       }
+    }
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
+  // Gantt: one flat {name, low, high, group?} row per task, never a
+  // {name, points} wrapper — a task has exactly one span on the timeline.
+  if (p.chart_type === 'gantt') {
+    if (p.series.length > 50) return null;
+    for (const item of p.series) {
+      if (!item || typeof item !== 'object') return null;
+      const it = item as Record<string, unknown>;
+      if (!label(it.name) || !finite(it.low) || !finite(it.high) || (it.low as number) > (it.high as number)) return null;
+      if (Object.keys(it).some(k => !['name', 'low', 'high', 'group'].includes(k))) return null;
+      if (it.group !== undefined && !label(it.group)) return null;
     }
     try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
     return value as ChatChartPresentation;

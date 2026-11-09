@@ -15,6 +15,7 @@ const fixtureFor = (chart_type: string) =>
   : chart_type === 'heatmap' ? [{name:'grid',cells:[{x:'A',y:'1',value:5}]}]
   : chart_type === 'calendar_heatmap' ? [{label:'2026-01-01',value:5},{label:'2026-01-02',value:9}]
   : chart_type === 'candlestick' ? [{name:'ACME',points:[{x:'2026-01-01',open:10,high:12,low:9,close:11}]}]
+  : chart_type === 'gantt' ? [{name:'Design',low:0,high:5},{name:'Kickoff',low:0,high:0}]
   : [{label:'A',value:5},{label:'B',value:9}];
 describe('portable chat chart contract', () => {
   for (const chart_type of CHART_TYPES) it(`renders ${chart_type} as a supported ECharts option`, () => {
@@ -406,6 +407,24 @@ describe('portable chat chart contract', () => {
     expect(data[0]).toBeCloseTo(10,5);
     expect(data[1]).toBeCloseTo(4.5,5);
     expect(data[2]).toBeCloseTo(6.59,5);
+  });
+  it('rejects a gantt row whose low exceeds its high', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'gantt',
+      series:[{name:'A',low:5,high:1}]})).toBeNull();
+  });
+  it('draws gantt bars for spans and a diamond marker for zero-duration milestones, grouped by color', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'gantt',series:[
+      {name:'Design',low:0,high:5},{name:'Build',low:5,high:12,group:'dev'},{name:'Kickoff',low:0,high:0,group:'dev'}]});
+    const option=chartOption(chart!);
+    const series=option.series as any[];
+    expect(series).toHaveLength(5); // 2 bars each for Design/Build, 1 marker for Kickoff
+    const kickoff=series.find(s=>s.type==='scatter');
+    expect(kickoff.data).toEqual([[0,2]]);
+    const designSpan=series.find(s=>s.name==='Design');
+    expect(designSpan.data).toEqual([5,null,null]);
+    const buildSpan=series.find(s=>s.name==='dev' && s.type==='bar');
+    expect(buildSpan.data).toEqual([null,7,null]);
+    expect(buildSpan.itemStyle.color).toBe(kickoff.itemStyle.color); // same group, same color
   });
 });
 
