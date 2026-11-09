@@ -1,10 +1,10 @@
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent } from 'echarts/components';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries } from './contract.js';
-echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart,
-  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, SVGRenderer]);
+import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries } from './contract.js';
+echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart,
+  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
   minimal: ['#475569', '#64748b', '#94a3b8', '#334155', '#0f766e', '#9a3412'],
@@ -42,11 +42,6 @@ function gaussianKde(values: number[], grid: number[]): number[] {
   const norm = 1 / (n * h * Math.sqrt(2 * Math.PI));
   return grid.map(x => norm * values.reduce((sum, v) => sum + Math.exp(-0.5 * ((x - v) / h) ** 2), 0));
 }
-/**
- * Deterministic beeswarm jitter: bins values the same way the histogram
- * transform does, then spreads each bin's points symmetrically around the
- * lane center in input order. No randomness, no collision search.
- */
 function pearson(a: number[], b: number[]): number {
   const meanA = a.reduce((sum, v) => sum + v, 0) / a.length;
   const meanB = b.reduce((sum, v) => sum + v, 0) / b.length;
@@ -62,6 +57,21 @@ function divergingColor(t: number): string {
   const [r, g, b] = clamped < 0 ? mix([255, 255, 255], [37, 99, 235], -clamped) : mix([255, 255, 255], [220, 38, 38], clamped);
   return `rgb(${r},${g},${b})`;
 }
+/** White (0) – `base` (1), for a nonnegative-magnitude heatmap value normalized to [0, 1]. */
+function sequentialColor(t: number, base: number[]): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  const [r, g, b] = base.map((v, i) => Math.round(255 + (v - 255) * clamped));
+  return `rgb(${r},${g},${b})`;
+}
+function hexToRgb(hex: string): number[] {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+/**
+ * Deterministic beeswarm jitter: bins values the same way the histogram
+ * transform does, then spreads each bin's points symmetrically around the
+ * lane center in input order. No randomness, no collision search.
+ */
 function beeswarmOffsets(values: number[], step = 0.06): number[] {
   const min = Math.min(...values), max = Math.max(...values);
   const bins = Math.max(1, Math.min(20, Math.ceil(Math.sqrt(values.length))));
@@ -287,6 +297,68 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     });
     return option;
   }
+  if (type === 'heatmap') {
+    // Validated to always be a single series of independent {x, y, value}
+    // cells — the x/y categories come from the cells themselves, not a
+    // shared axis built from every series the way other types compute it.
+    const [grid0] = payload.series as HeatmapSeries[];
+    const xs = [...new Set(grid0!.cells.map(c => c.x))];
+    const ys = [...new Set(grid0!.cells.map(c => c.y))];
+    const values = grid0!.cells.map(c => c.value);
+    const hasNegative = values.some(v => v < 0);
+    const largest = Math.max(...values.map(Math.abs));
+    const base = hexToRgb(color[0]!);
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
+      legend: { show: false },
+      xAxis: { type: 'category', data: xs, axisLabel: { color: text } },
+      yAxis: { type: 'category', data: ys, axisLabel: { color: text } },
+      series: [{ type: 'heatmap', label: { show: true, color: text }, data: grid0!.cells.map(c => ({
+        value: [xs.indexOf(c.x), ys.indexOf(c.y), c.value],
+        itemStyle: { color: hasNegative ? divergingColor(largest === 0 ? 0 : c.value / largest) : sequentialColor(largest === 0 ? 0 : c.value / largest, base) },
+      })) }],
+    };
+    return option;
+  }
+  if (type === 'candlestick') {
+    const ohlc = payload.series as OhlcSeries[];
+    const cats = [...new Set(ohlc.flatMap(s => s.points.map(p => String(p.x))))];
+    const up = color[0]!, down = color[1] ?? '#ef4444';
+    const hasVolume = ohlc.some(s => s.points.some(p => p.volume !== undefined));
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: 'axis', renderMode: 'richText', confine: true },
+      legend: { show: ohlc.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: ohlc.map(s => s.name) },
+      xAxis: { type: 'category', data: cats, axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } },
+      yAxis: hasVolume
+        ? [
+            { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } },
+            { type: 'value', name: 'Volume', show: false },
+          ]
+        : { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } },
+    };
+    option.series = ohlc.flatMap(s => {
+      const points = cats.map(x => s.points.find(p => String(p.x) === x));
+      const bars: Record<string, unknown>[] = [{
+        name: s.name, type: 'candlestick',
+        itemStyle: { color: up, color0: down, borderColor: up, borderColor0: down },
+        data: points.map(p => (p ? [p.open, p.close, p.low, p.high] : null)),
+      }];
+      if (hasVolume) bars.push({
+        name: `${s.name} volume`, type: 'bar', yAxisIndex: 1,
+        data: points.map(p => (p && p.volume !== undefined
+          ? { value: p.volume, itemStyle: { color: p.close >= p.open ? up : down, opacity: 0.4 } }
+          : null)),
+      });
+      return bars;
+    });
+    return option;
+  }
   const multi = 'name' in payload.series[0]!;
   const series = multi ? payload.series as ChartSeries[] : [{ name: payload.title || 'Value', points: (payload.series as ChartPoint[]).map(p => ({ x: p.label, y: p.value })) }];
   const categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
@@ -383,6 +455,26 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.series = series.map((s, i) => ({ name: s.name, type: 'bar', coordinateSystem: 'polar',
       itemStyle: { color: color[i % color.length] },
       data: categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? null) }));
+    return option;
+  }
+  if (type === 'calendar_heatmap') {
+    // Validated to always be a single series; each point's x is an ISO
+    // date string. Range is a lexicographic min/max — valid for YYYY-MM-DD.
+    const s = series[0]!;
+    const dates = s.points.map(p => String(p.x)).sort();
+    const values = s.points.map(p => p.y);
+    const largest = Math.max(...values.map(Math.abs));
+    const hasNegative = values.some(v => v < 0);
+    const base = hexToRgb(color[0]!);
+    (option as Record<string, unknown>).calendar = { range: [dates[0], dates[dates.length - 1]],
+      cellSize: ['auto', 16], itemStyle: { color: dark ? '#1e293b' : '#f1f5f9', borderColor: grid },
+      dayLabel: { color: text }, monthLabel: { color: text }, yearLabel: { show: false } };
+    option.legend = { show: false };
+    // Colors are precomputed per cell (no visualMap registered), so each
+    // datum is given as an object rather than a plain [date, value] pair.
+    option.series = [{ type: 'heatmap', coordinateSystem: 'calendar',
+      data: s.points.map(p => ({ value: [String(p.x), p.y],
+        itemStyle: { color: hasNegative ? divergingColor(largest === 0 ? 0 : p.y / largest) : sequentialColor(largest === 0 ? 0 : p.y / largest, base) } })) }];
     return option;
   }
   const categoryAxis = { type: 'category', data: categories, name: sparkline ? undefined : payload.x_label,
@@ -501,6 +593,25 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       { name: 'Cumulative %', type: 'line', yAxisIndex: 1, data: cumulative, symbol: 'circle',
         lineStyle: { color: color[1 % color.length] } },
     ];
+    return option;
+  }
+  if (type === 'drawdown' || type === 'cumulative_return') {
+    // Both are a running computation over the series in x order, reusing
+    // the ordinary line/area shape — no new data model, just a transform.
+    option.legend = { show: series.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: series.map(s => s.name) };
+    option.yAxis = { ...valueAxis, axisLabel: { ...valueAxis.axisLabel, formatter: '{value}%' } };
+    option.series = series.map((s, i) => {
+      const vals = categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? null);
+      let state = type === 'drawdown' ? -Infinity : 1; // running peak, or running growth factor
+      const transformed = vals.map(v => {
+        if (v === null) return null;
+        if (type === 'drawdown') { state = Math.max(state, v); return state > 0 ? ((v - state) / state) * 100 : 0; }
+        state *= 1 + v; return (state - 1) * 100;
+      });
+      return { name: s.name, type: 'line', lineStyle: { color: color[i % color.length] },
+        areaStyle: type === 'drawdown' ? { color: color[i % color.length], opacity: 0.25 } : undefined,
+        data: transformed };
+    });
     return option;
   }
   // Aligned per category, same as the non-percent path; a category a series

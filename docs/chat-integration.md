@@ -21,7 +21,8 @@ stacked_bar_100, line, area, step_line, range_area, error_bar, stacked_area,
 stacked_area_100, sparkline, pie, donut, rose, pareto, waterfall, funnel,
 pyramid, waffle, scatter, bubble, scatter_trend, histogram, box_plot, density,
 ecdf, strip_plot, beeswarm, scatter_matrix, correlation_matrix,
-parallel_coordinates, radar, polar_bar, gauge, bullet, progress. The `_100`
+parallel_coordinates, radar, polar_bar, gauge, bullet, progress, heatmap,
+calendar_heatmap, candlestick, drawdown, cumulative_return. The `_100`
 variants normalize each category's series to percentages of what is present,
 without treating an absent series as a zero contributor.
 Sparklines reuse the line/area data shape with axes and legend hidden.
@@ -87,6 +88,30 @@ rendered marker on the dial itself. Bullet shows the value as a thin bar
 over qualitative background bands plus a target tick, both scoped to that
 bullet's own row via explicit axis bounds. Progress is a plain filled bar
 against `max`, for a lightweight indicator rather than a dial.
+
+heatmap is always a single series of independent `{x, y, value}` cells —
+two categorical keys with no derived relationship between them (unlike
+correlation_matrix, whose cells come from a computed statistic). Good for a
+cohort/retention matrix: x = cohort, y = period, value = retention.
+calendar_heatmap reuses the plain `{label, value}` or named-series shape
+unchanged, but requires `label`/`x` to be an ISO `YYYY-MM-DD` date and is
+limited to one named series (a calendar has one range; more would mean
+silently dropping all but the first). Both color cells on a sequential
+white-to-theme-color scale when every value is nonnegative, or the same
+diverging blue-white-red scale correlation_matrix uses when any value is
+negative — computed per cell, never via a registered visualMap.
+
+candlestick takes a named OHLC series (`{x, open, high, low, close,
+volume?}`); low/high must actually bound open/close or the bar would
+misrepresent the traded range. A volume overlay (second y-axis, colored by
+up/down day) appears automatically whenever any point includes `volume` —
+it is not a separate chart_type. drawdown and cumulative_return need no new
+data shape at all: both reuse the ordinary line/area `{name, points: {x,
+y}}` shape and are purely a deterministic running computation over it in x
+order. Drawdown's `y` is a price/equity level; its output is percentage
+decline from the running peak (always ≤ 0). Cumulative_return's `y` is a
+*periodic return* (0.02 for +2%), not a price level; its output is
+compounded growth as a percentage.
 
 marimekko and violin are intentionally not included. A true variable-width
 mekko chart needs ECharts' `custom` series with a `renderItem` function,

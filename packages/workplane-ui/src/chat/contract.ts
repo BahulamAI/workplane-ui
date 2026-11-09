@@ -1,6 +1,6 @@
 /** Portable, data-only chat chart contract. No React, DOM or execution code. */
 export const CHART_CONTRACT_VERSION = 'workplane.chat-chart/1' as const;
-export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress'] as const;
+export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress', 'heatmap', 'calendar_heatmap', 'candlestick', 'drawdown', 'cumulative_return'] as const;
 // Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
 // or {name, values} wrapper — there is only ever one measurement per name.
 export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
@@ -29,10 +29,15 @@ export interface BubbleSeries { name: string; points: { x: number; y: number; si
 // points — `bands` (ascending qualitative thresholds) only means anything
 // for bullet; `target` means anything for gauge and bullet.
 export interface TargetSeries { name: string; value: number; min?: number; max?: number; target?: number; bands?: number[] }
+// Used by heatmap: two categorical keys plus a value per cell, independent
+// of each other (unlike correlation_matrix, which derives its cells).
+export interface HeatmapSeries { name: string; cells: { x: string; y: string; value: number }[] }
+// Used by candlestick: one OHLC bar per x, with an optional traded volume.
+export interface OhlcSeries { name: string; points: { x: string | number; open: number; high: number; low: number; close: number; volume?: number }[] }
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
-  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[]; observations?: string[];
+  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
@@ -71,19 +76,40 @@ const targetItem = { type: 'object', additionalProperties: false, required: ['na
   name: text, value: { type: 'number' }, min: { type: 'number' }, max: { type: 'number' }, target: { type: 'number' },
   bands: { type: 'array', maxItems: 5, items: { type: 'number' } },
 } };
+// Used by heatmap: two independent categorical keys plus a value per cell.
+const heatmapMulti = { type: 'object', additionalProperties: false, required: ['name', 'cells'], properties: {
+  name: text, cells: { type: 'array', minItems: 1, maxItems: 500, items: {
+    type: 'object', additionalProperties: false, required: ['x', 'y', 'value'],
+    properties: { x: text, y: text, value: { type: 'number' } },
+  } },
+} };
+// Used by candlestick: one OHLC bar per x, with an optional traded volume.
+const ohlcMulti = { type: 'object', additionalProperties: false, required: ['name', 'points'], properties: {
+  name: text, points: { type: 'array', minItems: 1, maxItems: 500, items: {
+    type: 'object', additionalProperties: false, required: ['x', 'open', 'high', 'low', 'close'],
+    properties: { x: { anyOf: [text, { type: 'number' }] }, open: { type: 'number' }, high: { type: 'number' },
+      low: { type: 'number' }, close: { type: 'number' }, volume: { type: 'number', minimum: 0 } },
+  } },
+} };
 export const chartToolSchema = {
   type: 'object', additionalProperties: false, required: ['chart_type', 'series'], properties: {
     chart_type: { type: 'string', enum: CHART_TYPES }, title: text, x_label: text, y_label: text,
-    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem] } },
+    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem, heatmapMulti, ohlcMulti] } },
     observations: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 1000 } },
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
   },
   allOf: [{
-    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES] } } }, required: ['chart_type'] },
+    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES] } } }, required: ['chart_type'] },
     then: { properties: { series: { items: { anyOf: [point, multi] } } } },
   }, {
     if: { properties: { chart_type: { const: 'bubble' } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 12, items: bubbleMulti } } },
+  }, {
+    if: { properties: { chart_type: { const: 'heatmap' } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 1, items: heatmapMulti } } },
+  }, {
+    if: { properties: { chart_type: { const: 'candlestick' } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 6, items: ohlcMulti } } },
   }, {
     if: { properties: { chart_type: { enum: TARGET_CHART_TYPES } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 6, items: targetItem } } },
@@ -151,6 +177,11 @@ export const chartCatalog = {
     { types: ['gauge'], purpose: "Show a single measurement against a min/max range (default 0-100), optionally with a target shown in the label; 1-6 named gauges per chart.", status: 'supported' },
     { types: ['bullet'], purpose: 'Show a measurement against a target and qualitative background bands (e.g. poor/satisfactory/good) within a min/max range; 1-6 named bullets per chart.', status: 'supported' },
     { types: ['progress'], purpose: 'Show one or more named values as a filled bar against a max (default 100); a lightweight progress/thermometer indicator, not a dial.', status: 'supported' },
+    { types: ['heatmap'], purpose: 'Show a value for every combination of two independent categorical keys (e.g. a cohort/retention matrix) as a color-coded grid; single series of cells only.', status: 'supported' },
+    { types: ['calendar_heatmap'], purpose: 'Show one value per day as a color-coded GitHub-style calendar grid; reuses the plain {label, value} shape with label as an ISO date (YYYY-MM-DD).', status: 'supported' },
+    { types: ['candlestick'], purpose: 'Show open/high/low/close per period (e.g. trading day), optionally with a traded volume overlay on a second axis colored by up/down.', status: 'supported' },
+    { types: ['drawdown'], purpose: 'Show percentage decline from the running peak of a value series over time; reuses the line/area data shape, always nonpositive by construction.', status: 'supported' },
+    { types: ['cumulative_return'], purpose: 'Show compounded growth from a series of periodic returns (e.g. 0.02 for +2%), not price levels; reuses the line/area data shape.', status: 'supported' },
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
   instructions: 'Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.',
@@ -199,6 +230,68 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
       sampleCount += values.length;
     }
     if (sampleCount > 2000) return null;
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
+  // Heatmap is always a single series of independent {x, y, value} cells —
+  // not aggregated per category the way other named-series types are.
+  if (p.chart_type === 'heatmap') {
+    if (typeof p.series[0]?.name !== 'string' || p.series.length !== 1) return null;
+    const item = p.series[0] as Record<string, unknown>;
+    if (!label(item.name) || Object.keys(item).some(k => !['name', 'cells'].includes(k))) return null;
+    const cells = item.cells;
+    if (!Array.isArray(cells) || !cells.length || cells.length > 500) return null;
+    for (const c of cells as Record<string, unknown>[]) {
+      if (!c || Object.keys(c).some(k => !['x', 'y', 'value'].includes(k)) || !label(c.x) || !label(c.y) || !finite(c.value)) return null;
+    }
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
+  // Calendar_heatmap reuses the plain point/multi shape, but its label is a
+  // date the renderer places on a calendar — reject anything that isn't an
+  // ISO YYYY-MM-DD string up front, rather than failing inside ECharts.
+  if (p.chart_type === 'calendar_heatmap') {
+    const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+    const dateOk = (s: unknown) => typeof s === 'string' && isoDate.test(s);
+    const isMultiDate = typeof p.series[0]?.name === 'string';
+    // A calendar has one range; rendering more than one named series would
+    // mean silently dropping all but the first, so reject it up front.
+    if (isMultiDate && p.series.length !== 1) return null;
+    for (const item of p.series) {
+      if (!item || typeof item !== 'object') return null;
+      if (isMultiDate) {
+        const points = (item as Record<string, unknown>).points;
+        if (!Array.isArray(points) || points.some((q: unknown) => !dateOk((q as Record<string, unknown>)?.x))) return null;
+      } else if (!dateOk((item as Record<string, unknown>).label)) return null;
+    }
+    // Fall through to the generic point/multi validation below for the rest
+    // of the shape (value finiteness, size limits, and so on).
+  }
+
+  // Candlestick is always the named OHLC wrapper; low/high must actually
+  // bound open/close, or the bar would misrepresent the traded range.
+  if (p.chart_type === 'candlestick') {
+    if (typeof p.series[0]?.name !== 'string' || p.series.length > 6) return null;
+    let ohlcCount = 0;
+    for (const item of p.series) {
+      if (!item || typeof item !== 'object') return null;
+      const s = item as Record<string, unknown>;
+      if (!label(s.name) || Object.keys(s).some(k => !['name', 'points'].includes(k))) return null;
+      const points = s.points;
+      if (!Array.isArray(points) || !points.length || points.length > 500) return null;
+      for (const q of points as Record<string, unknown>[]) {
+        if (!q || Object.keys(q).some(k => !['x', 'open', 'high', 'low', 'close', 'volume'].includes(k))) return null;
+        if (!(label(q.x) || finite(q.x)) || !finite(q.open) || !finite(q.high) || !finite(q.low) || !finite(q.close)) return null;
+        if ((q.low as number) > Math.min(q.open as number, q.close as number)) return null;
+        if ((q.high as number) < Math.max(q.open as number, q.close as number)) return null;
+        if ((q.low as number) > (q.high as number)) return null;
+        if (q.volume !== undefined && (!finite(q.volume) || (q.volume as number) < 0)) return null;
+        ohlcCount++;
+      }
+    }
+    if (ohlcCount > 2000) return null;
     try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
     return value as ChatChartPresentation;
   }

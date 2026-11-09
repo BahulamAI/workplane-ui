@@ -12,6 +12,9 @@ const fixtureFor = (chart_type: string) =>
   : (ALIGNED_SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'x',values:[1,2,3]},{name:'y',values:[4,5,6]}]
   : (SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'one',values:[1,2,2,3,5,8]}]
   : (TARGET_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'one',value:70,min:0,max:100,target:80,bands:[50,80,100]}]
+  : chart_type === 'heatmap' ? [{name:'grid',cells:[{x:'A',y:'1',value:5}]}]
+  : chart_type === 'calendar_heatmap' ? [{label:'2026-01-01',value:5},{label:'2026-01-02',value:9}]
+  : chart_type === 'candlestick' ? [{name:'ACME',points:[{x:'2026-01-01',open:10,high:12,low:9,close:11}]}]
   : [{label:'A',value:5},{label:'B',value:9}];
 describe('portable chat chart contract', () => {
   for (const chart_type of CHART_TYPES) it(`renders ${chart_type} as a supported ECharts option`, () => {
@@ -343,6 +346,66 @@ describe('portable chat chart contract', () => {
     const series=(option.series as any[])[0];
     expect(series.data).toEqual([40]);
     expect(series.markArea.data[0][1].xAxis).toBe(80);
+  });
+  it('places heatmap cells by their own x/y categories and colors by sign, single series only', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'heatmap',series:[
+      {name:'a',cells:[{x:'A',y:'1',value:1}]},{name:'b',cells:[{x:'A',y:'1',value:1}]}]})).toBeNull();
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'heatmap',series:[
+      {name:'grid',cells:[{x:'A',y:'1',value:2},{x:'B',y:'1',value:8},{x:'A',y:'2',value:-4}]}]});
+    const option=chartOption(chart!) as any;
+    expect(option.xAxis.data).toEqual(['A','B']);
+    expect(option.yAxis.data).toEqual(['1','2']);
+    const cells=option.series[0].data;
+    expect(cells[0].value).toEqual([0,0,2]);
+    expect(cells[0].itemStyle.color).toBe('rgb(246,201,201)'); // positive: tinted red
+    expect(cells[2].value).toEqual([0,1,-4]);
+    expect(cells[2].itemStyle.color).toBe('rgb(146,177,245)'); // negative: tinted blue
+  });
+  it('rejects a non-ISO calendar_heatmap date and more than one named series', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'calendar_heatmap'};
+    expect(validateChatChart({...base,series:[{label:'Jan 1',value:1}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{name:'a',points:[{x:'2026-01-01',y:1}]},{name:'b',points:[{x:'2026-01-02',y:1}]}]})).toBeNull();
+  });
+  it('ranges calendar_heatmap over the min/max date and colors by sign', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'calendar_heatmap',series:[
+      {label:'2026-01-01',value:5},{label:'2026-01-03',value:-5}]});
+    const option=chartOption(chart!) as any;
+    expect(option.calendar.range).toEqual(['2026-01-01','2026-01-03']);
+    expect(option.series[0].data[0]).toMatchObject({ value: ['2026-01-01',5], itemStyle: { color: 'rgb(220,38,38)' } });
+    expect(option.series[0].data[1]).toMatchObject({ value: ['2026-01-03',-5], itemStyle: { color: 'rgb(37,99,235)' } });
+  });
+  it('rejects an OHLC bar whose low/high do not bound open/close', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'candlestick'};
+    expect(validateChatChart({...base,series:[{name:'A',points:[{x:'d1',open:10,high:12,low:11,close:9}]}]})).toBeNull(); // low above close
+    expect(validateChatChart({...base,series:[{name:'A',points:[{x:'d1',open:10,high:10.5,low:8,close:11}]}]})).toBeNull(); // high below close
+    expect(validateChatChart({...base,series:[{name:'A',points:[{x:'d1',open:10,high:12,low:8,close:11}]}]})).not.toBeNull();
+  });
+  it('orders candlestick data as [open, close, low, high] and adds a colored volume bar only when given', () => {
+    const noVolume=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'candlestick',series:[
+      {name:'ACME',points:[{x:'d1',open:10,high:12,low:8,close:11}]}]});
+    const s1=chartOption(noVolume!).series as any[];
+    expect(s1).toHaveLength(1);
+    expect(s1[0].data).toEqual([[10,11,8,12]]);
+    const withVolume=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'candlestick',series:[
+      {name:'ACME',points:[{x:'d1',open:10,high:12,low:8,close:9,volume:100}]}]}); // a down day
+    const s2=chartOption(withVolume!).series as any[];
+    expect(s2).toHaveLength(2);
+    expect(s2[1].data[0].value).toBe(100);
+    expect(s2[1].data[0].itemStyle.color).not.toBe(s1[0].itemStyle.color); // down-day color differs from the up color
+  });
+  it('computes an exact drawdown from the running peak, always nonpositive', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'drawdown',series:[
+      {name:'eq',points:[{x:'t1',y:100},{x:'t2',y:80},{x:'t3',y:90}]}]});
+    const data=(chartOption(chart!).series as any[])[0].data;
+    expect(data).toEqual([0,-20,-10]);
+  });
+  it('compounds cumulative_return from periodic returns, not price levels', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'cumulative_return',series:[
+      {name:'strat',points:[{x:'t1',y:0.1},{x:'t2',y:-0.05},{x:'t3',y:0.02}]}]});
+    const data=(chartOption(chart!).series as any[])[0].data;
+    expect(data[0]).toBeCloseTo(10,5);
+    expect(data[1]).toBeCloseTo(4.5,5);
+    expect(data[2]).toBeCloseTo(6.59,5);
   });
 });
 
