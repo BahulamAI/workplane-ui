@@ -67,6 +67,13 @@ function hexToRgb(hex: string): number[] {
   const n = parseInt(hex.replace('#', ''), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
+/** Lightens (`factor` > 0) or darkens (`factor` < 0) a hex color toward white/black, for skeuomorphism's gloss gradient. Non-hex input (e.g. an existing gradient object) is returned unchanged. */
+function shade(hex: string, factor: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const target = factor > 0 ? 255 : 0;
+  const [r, g, b] = hexToRgb(hex).map(v => Math.round(v + (target - v) * Math.abs(factor)));
+  return `rgb(${r},${g},${b})`;
+}
 /**
  * Stable series-to-color assignment: the same series name always lands on
  * the same palette slot, regardless of how many other series are present
@@ -830,30 +837,95 @@ function applyInteractions(option: echarts.EChartsCoreOption, payload: ChatChart
   }
   return option;
 }
+function stripAxisChrome(axis: unknown): void {
+  const list = Array.isArray(axis) ? axis : axis ? [axis] : [];
+  for (const a of list) {
+    if (a && typeof a === 'object') {
+      const ax = a as Record<string, unknown>;
+      ax.splitLine = { show: false };
+      ax.axisTick = { show: false };
+    }
+  }
+}
+function setFontFamily(opt: Record<string, unknown>, family: string): void {
+  const existing = opt.textStyle && typeof opt.textStyle === 'object' ? opt.textStyle as Record<string, unknown> : {};
+  opt.textStyle = { ...existing, fontFamily: family };
+}
 /**
- * 'outlined' strips each series' own fill to a transparent center plus a
- * colored border, and zeroes any area fill — safe and unambiguous only for
- * OUTLINE_CHART_TYPES, where every series goes through the one generic
- * bar/line/area/scatter construction path and fill is purely decorative,
- * never the data encoding. Scoped there deliberately; see the const's own
- * comment in contract.ts for exactly what this was never verified against.
+ * Visual style is a post-process over the already-built option, same as
+ * density, so every chart_type branch above stays untouched when it's
+ * absent (the default, 'flat'). Three styles (outlined, glassmorphism,
+ * skeuomorphism) rewrite a series' own fill and are pre-restricted by
+ * validateChatChart to FILL_SAFE_CHART_TYPES; the other eight only touch
+ * chrome/border/shadow/typography and are safe on every chart_type — they
+ * simply no-op wherever the relevant option shape (itemStyle, xAxis, ...)
+ * isn't present, e.g. material's shadow on a pie/gauge chart that has no
+ * series-level itemStyle at all.
  */
 function applyVisualStyle(option: echarts.EChartsCoreOption, payload: ChatChartPresentation): echarts.EChartsCoreOption {
-  if (payload.visual_style !== 'outlined') return option;
+  const style = payload.visual_style ?? 'flat';
+  if (style === 'flat') return option;
+  const highContrast = !!payload.accessibility?.high_contrast || payload.theme === 'high_contrast';
+  // "Glass requires a readable opaque fallback" and "high contrast takes
+  // precedence over ornament" — skip the whole transform under high
+  // contrast rather than fighting it field by field.
+  if (style === 'glassmorphism' && highContrast) return option;
   const opt = option as Record<string, unknown>;
-  if (!Array.isArray(opt.series)) return option;
-  for (const s of opt.series as Record<string, unknown>[]) {
+  const series = Array.isArray(opt.series) ? opt.series as Record<string, unknown>[] : [];
+  if (style === 'minimalism') {
+    stripAxisChrome(opt.xAxis);
+    stripAxisChrome(opt.yAxis);
+    return option;
+  }
+  if (style === 'editorial') { setFontFamily(opt, 'Georgia, "Times New Roman", serif'); return option; }
+  if (style === 'technical') { setFontFamily(opt, '"SF Mono", Consolas, monospace'); return option; }
+  if (style === 'hand_drawn') setFontFamily(opt, '"Comic Sans MS", "Segoe Print", cursive');
+  for (const s of series) {
     const itemStyle = s.itemStyle;
-    if (itemStyle && typeof itemStyle === 'object') {
-      const style = itemStyle as Record<string, unknown>;
-      if (typeof style.color === 'string') {
-        style.borderColor = style.color;
-        style.color = 'transparent';
-        style.borderWidth = 2;
+    const st = itemStyle && typeof itemStyle === 'object' ? itemStyle as Record<string, unknown> : undefined;
+    if (style === 'outlined') {
+      if (st && typeof st.color === 'string') { st.borderColor = st.color; st.color = 'transparent'; st.borderWidth = 2; }
+      const areaStyle = s.areaStyle;
+      if (areaStyle && typeof areaStyle === 'object') (areaStyle as Record<string, unknown>).opacity = 0;
+    } else if (style === 'glassmorphism') {
+      if (st) {
+        st.opacity = 0.55; st.borderWidth = 1; st.shadowBlur = 8; st.shadowColor = 'rgba(0,0,0,0.15)';
+        if (typeof st.color === 'string') st.borderColor = st.color;
+      }
+      const areaStyle = s.areaStyle;
+      if (areaStyle && typeof areaStyle === 'object') (areaStyle as Record<string, unknown>).opacity = 0.35;
+    } else if (style === 'skeuomorphism') {
+      // A gloss gradient on the fill (lighter top, darker bottom) plus a
+      // drop shadow — shading a 2D surface, not a fake 3D projection: the
+      // shape and its extent on both axes are exactly what they were.
+      if (st && typeof st.color === 'string') {
+        const base = st.color;
+        st.color = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [{ offset: 0, color: shade(base, 0.35) }, { offset: 1, color: shade(base, -0.15) }] };
+        st.shadowBlur = 4; st.shadowColor = 'rgba(0,0,0,0.25)'; st.shadowOffsetY = 2;
+      }
+    } else if (st && typeof st.color === 'string') {
+      if (style === 'material') {
+        st.shadowBlur = 6; st.shadowColor = 'rgba(0,0,0,0.25)'; st.shadowOffsetY = 3;
+        st.borderRadius = st.borderRadius ?? 4;
+      } else if (style === 'neumorphism') {
+        // A shadow must never be the only boundary cue (plan's explicit
+        // accessibility requirement) — always pair it with a real border.
+        st.shadowBlur = 10; st.shadowColor = 'rgba(0,0,0,0.2)'; st.shadowOffsetY = 4;
+        st.borderColor = st.color; st.borderWidth = 1; st.borderRadius = st.borderRadius ?? 10;
+      } else if (style === 'claymorphism') {
+        st.shadowBlur = 14; st.shadowColor = 'rgba(0,0,0,0.18)'; st.shadowOffsetY = 6;
+        st.borderColor = st.color; st.borderWidth = 2; st.borderRadius = st.borderRadius ?? 16;
+      } else if (style === 'brutalist') {
+        st.borderColor = highContrast ? '#ffffff' : '#000000'; st.borderWidth = 3; st.borderRadius = 0; st.shadowBlur = 0;
+      } else if (style === 'hand_drawn') {
+        // No wobble: ECharts has no declarative sketch-line rendering (that
+        // needs a custom renderItem, deliberately avoided everywhere else
+        // in this engine). A dashed stroke plus the casual font set above
+        // approximate the feel without moving a single data point.
+        st.borderType = 'dashed'; st.borderColor = st.color; st.borderWidth = 2;
       }
     }
-    const areaStyle = s.areaStyle;
-    if (areaStyle && typeof areaStyle === 'object') (areaStyle as Record<string, unknown>).opacity = 0;
   }
   return option;
 }

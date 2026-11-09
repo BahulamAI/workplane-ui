@@ -226,32 +226,60 @@ sibling is added, removed or reordered between renders, so "the Revenue
 line is blue" stays true rather than shifting when the agent happens to
 list series in a different order.
 
-Two of the plan's twelve visual styles are implemented: `visual_style:
-'flat'` (the default — every chart already renders this way) and
-`'outlined'`, which strips each series' own fill to a transparent center
-plus a colored border and zeroes any area fill. `'outlined'` is available
-only for `OUTLINE_CHART_TYPES` — the twelve types that share the one
-generic bar/line/area/scatter construction path, where fill is purely
-decorative. It is deliberately **not** offered for pie/donut/rose/funnel/
-pyramid/waffle (fill is the only thing distinguishing adjacent slices),
-heatmap/calendar_heatmap/correlation_matrix/treemap/sunburst (fill color
-*is* the data encoding — outlining would destroy the chart's meaning,
-exactly what the plan says a style must never do), or any type with its
-own helper/invisible sub-series (dumbbell, range_area, error_bar,
-waterfall, gantt, bullet, ...), since this generic transform was never
-verified against those shapes.
+All twelve of the plan's visual styles are implemented, applied as a
+single post-process over the already-built ECharts option (same place as
+density) so every chart_type branch stays untouched when `visual_style` is
+absent — the default, `'flat'`.
 
-The remaining ten styles (minimalism/skeuomorphism/glassmorphism/
-neumorphism/claymorphism/material/editorial/technical/hand-drawn/
-brutalist) are intentionally not implemented. Several of those — glass,
-neumorphism, skeuomorphism, claymorphism, hand-drawn — are exactly what
-the plan itself warns against: styles that risk creating misleading
-pseudo-3D marks or diminishing contrast. Applying any of them consistently
-would mean a transform reaching into the ~50 chart_type branches'
-heterogeneous series shapes, which is precisely the kind of change this
-test suite cannot verify, since it inspects the built option object, never
-real rendering. Revisit if there's a concrete need and a way to verify
-each style actually renders safely.
+Three rewrite a series' own fill, and are restricted to
+`FILL_SAFE_CHART_TYPES` — the twelve types sharing the one generic
+bar/line/area/scatter construction path, where fill is purely decorative.
+Requesting one elsewhere is rejected, not silently ignored:
+
+- `'outlined'` — transparent fill, a colored border, zeroed area fill.
+- `'glassmorphism'` — 0.55 opacity fill, a thin border, a soft shadow. Per
+  the plan's "glass requires a readable opaque fallback" and "high
+  contrast takes precedence over ornament," the whole transform is skipped
+  under `accessibility.high_contrast` (or `theme: 'high_contrast'`) rather
+  than fighting it field by field.
+- `'skeuomorphism'` — the flat fill becomes a two-stop linear gradient
+  (lighter top, darker bottom) plus a drop shadow: a gloss shading *on* the
+  2D surface, not a fake 3D projection — the shape's extent on both axes
+  never moves.
+
+`FILL_SAFE_CHART_TYPES` is deliberately **not** offered to any of the
+three for pie/donut/rose/funnel/pyramid/waffle (fill is the only thing
+distinguishing adjacent slices), heatmap/calendar_heatmap/
+correlation_matrix/treemap/sunburst (fill color *is* the data encoding),
+or any type with its own helper/invisible sub-series (dumbbell,
+range_area, error_bar, waterfall, gantt, bullet, ...), since none of these
+fill-rewriting transforms were verified against those shapes.
+
+The other nine (`'minimalism'`, `'material'`, `'neumorphism'`,
+`'claymorphism'`, `'editorial'`, `'technical'`, `'hand_drawn'`,
+`'brutalist'`, and `'flat'` itself) never touch a series' color or opacity
+channel — only chrome, border, shadow and typography — so they apply to
+every chart_type with no allowlist, the same way density does. Each simply
+no-ops wherever the option shape it needs isn't present (e.g. `material`'s
+shadow on a pie chart, which has no series-level `itemStyle` to begin
+with):
+
+- `'minimalism'` — hides axis split lines and ticks.
+- `'material'` — a drop shadow and small border radius (card elevation).
+- `'neumorphism'` — a soft shadow paired with a real border, never a
+  shadow alone, per the plan's explicit accessibility caution that a
+  boundary can't rely on shadow direction by itself.
+- `'claymorphism'` — the same shadow-plus-border pairing as neumorphism,
+  with a larger radius and a heavier border for a puffier look.
+- `'editorial'` — a serif font family.
+- `'technical'` — a monospace font family.
+- `'hand_drawn'` — a casual/cursive font family plus a dashed border.
+  There is no declarative sketch-line wobble: that needs ECharts' `custom`
+  series with a `renderItem` function, deliberately avoided everywhere
+  else in this engine, so positions never move — only the stroke style and
+  the font approximate the feel.
+- `'brutalist'` — a thick solid border (black, or white under
+  `high_contrast`), zero corner radius, zero shadow.
 
 ## Interactions
 
@@ -277,7 +305,7 @@ the value axis for `INTERACTIVE_CHART_TYPES` — a target, threshold or
 baseline to compare the data against, attached as a `markLine` on the
 chart's first series.
 
-`visual_style: 'flat' | 'outlined'` is covered above, in "Style, palette,
+`visual_style` (all twelve values) is covered above, in "Style, palette,
 accessibility and density".
 
 `mountChatChart(...)` returns `svg()` (unchanged) and now `png()` —

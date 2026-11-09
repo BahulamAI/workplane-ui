@@ -13,22 +13,28 @@ export const NETWORK_CHART_TYPES = ['sankey', 'graph'] as const;
 // Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
 // or {name, values} wrapper — there is only ever one measurement per name.
 export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
-// Visual style, scoped deliberately narrow: 'outlined' strips each series'
-// own fill to a transparent center plus a colored border (and zeroes any
-// area fill), which only has a safe, unambiguous meaning where fill is
-// purely decorative. It is NOT offered for: pie/donut/rose/funnel/pyramid/
-// waffle (fill is the only thing distinguishing adjacent slices/cells),
-// heatmap/calendar_heatmap/correlation_matrix/treemap/sunburst (fill color
-// *is* the data encoding — outlining would destroy the chart's meaning,
+// The plan's full twelve-option visual-style system. Three of them rewrite
+// a series' own fill (outlined, glassmorphism, skeuomorphism) and only have
+// a safe, unambiguous meaning where fill is purely decorative — gated by
+// FILL_SAFE_CHART_TYPES below. The other nine (minimalism, material,
+// neumorphism, claymorphism, editorial, technical, hand_drawn, brutalist,
+// and the default flat) only touch chrome, borders, shadow and typography,
+// never a series' color/opacity channel, so they apply to every chart_type
+// without needing an allowlist — same reasoning density/accessibility use.
+export const VISUAL_STYLES = ['flat', 'outlined', 'minimalism', 'material', 'glassmorphism',
+  'neumorphism', 'skeuomorphism', 'claymorphism', 'editorial', 'technical', 'hand_drawn', 'brutalist'] as const;
+export type VisualStyle = typeof VISUAL_STYLES[number];
+// Chart types where fill is purely decorative, not the data encoding: the
+// twelve that share the one generic bar/line/area/scatter construction
+// path. NOT offered for: pie/donut/rose/funnel/pyramid/waffle (fill is the
+// only thing distinguishing adjacent slices/cells), heatmap/
+// calendar_heatmap/correlation_matrix/treemap/sunburst (fill color *is*
+// the data encoding — rewriting it would destroy the chart's meaning,
 // exactly what the plan warns a style must never do), and every type with
 // its own helper/invisible sub-series (dumbbell, range_area, error_bar,
-// waterfall, gantt, bullet, ...) this generic transform was never verified
-// against. The rest of the plan's twelve-option style system (glass,
-// neumorphism, skeuomorphism, claymorphism, hand-drawn, ...) remains
-// unimplemented for the reasons in chat-integration.md.
-export const VISUAL_STYLES = ['flat', 'outlined'] as const;
-export type VisualStyle = typeof VISUAL_STYLES[number];
-export const OUTLINE_CHART_TYPES = ['bar', 'horizontal_bar', 'stacked_bar', 'stacked_bar_100',
+// waterfall, gantt, bullet, ...) these fill-rewriting transforms were
+// never verified against.
+export const FILL_SAFE_CHART_TYPES = ['bar', 'horizontal_bar', 'stacked_bar', 'stacked_bar_100',
   'line', 'area', 'step_line', 'stacked_area', 'stacked_area_100', 'scatter', 'scatter_trend', 'sparkline'] as const;
 // Types with exactly one cartesian x/y axis pair (not a multi-grid, polar,
 // calendar or hierarchy/network layout), where zoom/pan and a reference
@@ -269,7 +275,7 @@ export const chartToolSchema = {
     if: { properties: { chart_type: { not: { enum: INTERACTIVE_CHART_TYPES } } }, required: ['chart_type'] },
     then: { properties: { reference_lines: false } },
   }, {
-    if: { properties: { chart_type: { not: { enum: OUTLINE_CHART_TYPES } }, visual_style: { const: 'outlined' } }, required: ['chart_type', 'visual_style'] },
+    if: { properties: { chart_type: { not: { enum: FILL_SAFE_CHART_TYPES } }, visual_style: { enum: ['outlined', 'glassmorphism', 'skeuomorphism'] } }, required: ['chart_type', 'visual_style'] },
     then: { properties: { visual_style: false } },
   }],
 } as const;
@@ -415,7 +421,7 @@ export const chartCatalog = {
     reference_lines: "Optional top-level reference_lines: [{value, label?}], up to 10, for chart types in INTERACTIVE_CHART_TYPES. Draws a dashed line across the value axis — a target or baseline to compare against, not data.",
     sort: "Optional top-level sort: 'asc'|'desc', for chart types in SORTABLE_CHART_TYPES. Reorders by value; omit it and the input order is kept exactly as given.",
     export: 'mountChatChart(...) returns svg() and png() for exporting the rendered chart; both are host-side JS calls, not part of the JSON payload.',
-    visual_style: "Optional top-level visual_style: 'flat' (default) | 'outlined', for chart types in OUTLINE_CHART_TYPES only. 'outlined' strips each series' fill to a transparent center plus a colored border; unavailable for types where fill is the data encoding itself (pie/donut/heatmap/treemap/...) or that have their own helper sub-series this transform isn't verified against.",
+    visual_style: "Optional top-level visual_style, default 'flat'. 'outlined', 'glassmorphism' and 'skeuomorphism' rewrite a series' own fill and are restricted to FILL_SAFE_CHART_TYPES (fill is decorative there, not the data encoding); the other eight ('minimalism', 'material', 'neumorphism', 'claymorphism', 'editorial', 'technical', 'hand_drawn', 'brutalist') only touch chrome/border/shadow/typography and apply to every chart_type. 'glassmorphism' falls back to an opaque fill automatically under high_contrast, per the plan's 'high contrast takes precedence over ornament'.",
     drill_down_and_cross_filtering: 'Not available from this portable, read-only contract — it requires a host-side data query or document commit, which an agent cannot embed as code. The Generative BI document surface has its own selection/query-bound interaction model for this; the chat contract does not share it.',
   },
 };
@@ -447,7 +453,9 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   // would apply. 'flat' needs no check: every type renders that way already.
   if (p.visual_style !== undefined) {
     if (!(VISUAL_STYLES as readonly string[]).includes(p.visual_style as string)) return null;
-    if (p.visual_style === 'outlined' && !(OUTLINE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) return null;
+    // outlined/glassmorphism/skeuomorphism each rewrite a series' own fill.
+    if (['outlined', 'glassmorphism', 'skeuomorphism'].includes(p.visual_style as string)
+      && !(FILL_SAFE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) return null;
   }
   if (p.sort !== undefined) {
     if (!['asc', 'desc'].includes(p.sort as string)) return null;

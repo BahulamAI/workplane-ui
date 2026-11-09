@@ -704,7 +704,7 @@ it('zoom preserves interval and stacked helper rows instead of filtering their r
 });
 
 describe('visual_style', () => {
-  it("rejects visual_style: 'outlined' for a chart_type outside OUTLINE_CHART_TYPES, but allows 'flat' everywhere", () => {
+  it("rejects visual_style: 'outlined' for a chart_type outside FILL_SAFE_CHART_TYPES, but allows 'flat' everywhere", () => {
     expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
       series:[{label:'A',value:1}],visual_style:'outlined'})).toBeNull();
     expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
@@ -728,5 +728,81 @@ describe('visual_style', () => {
     const absent=chartOption(validateChatChart(base)!);
     const flat=chartOption(validateChatChart({...base,visual_style:'flat'})!);
     expect(flat).toEqual(absent);
+  });
+
+  it("rejects 'glassmorphism' and 'skeuomorphism' outside FILL_SAFE_CHART_TYPES too, since both rewrite fill", () => {
+    for (const visual_style of ['glassmorphism', 'skeuomorphism']) {
+      expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+        series:[{label:'A',value:1}],visual_style})).toBeNull();
+      expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+        series:[{label:'A',value:1}],visual_style})).not.toBeNull();
+    }
+  });
+
+  it('allows the 8 chrome/typography-only styles on every chart_type, including pie where fill is the encoding', () => {
+    for (const visual_style of ['minimalism', 'material', 'neumorphism', 'claymorphism', 'editorial', 'technical', 'hand_drawn', 'brutalist']) {
+      expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+        series:[{label:'A',value:1}],visual_style})).not.toBeNull();
+    }
+  });
+
+  it("'glassmorphism' fades the fill but falls back to the unmodified option under high_contrast", () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}],visual_style:'glassmorphism' as const};
+    const chart=validateChatChart(base)!;
+    const series=(chartOption(chart).series as any[])[0];
+    expect(series.itemStyle.opacity).toBe(0.55);
+    expect(series.itemStyle.shadowBlur).toBeGreaterThan(0);
+    const highContrast=validateChatChart({...base,accessibility:{high_contrast:true}})!;
+    expect(chartOption(highContrast)).toEqual(chartOption(validateChatChart({...base,visual_style:undefined,accessibility:{high_contrast:true}})!));
+  });
+
+  it("'skeuomorphism' turns a flat fill into a two-stop gloss gradient plus a drop shadow, without moving the shape", () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}],visual_style:'skeuomorphism'});
+    const itemStyle=(chartOption(chart!).series as any[])[0].itemStyle;
+    expect(itemStyle.color.type).toBe('linear');
+    expect(itemStyle.color.colorStops).toHaveLength(2);
+    expect(itemStyle.shadowOffsetY).toBeGreaterThan(0);
+  });
+
+  it("'minimalism' hides axis split lines and ticks without touching the data", () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}],visual_style:'minimalism'});
+    const option=chartOption(chart!) as any;
+    expect(option.xAxis.splitLine.show).toBe(false);
+    expect(option.yAxis.axisTick.show).toBe(false);
+    expect(option.series[0].data).toEqual(chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}]})!).series[0].data);
+  });
+
+  it("'material' adds elevation shadow and rounded corners; 'neumorphism'/'claymorphism' always pair their shadow with a visible border", () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}]};
+    const material=(chartOption(validateChatChart({...base,visual_style:'material'})!).series as any[])[0].itemStyle;
+    expect(material.shadowBlur).toBeGreaterThan(0);
+    expect(material.borderRadius).toBeGreaterThan(0);
+    for (const visual_style of ['neumorphism', 'claymorphism']) {
+      const itemStyle=(chartOption(validateChatChart({...base,visual_style})!).series as any[])[0].itemStyle;
+      expect(itemStyle.shadowBlur).toBeGreaterThan(0);
+      expect(itemStyle.borderWidth).toBeGreaterThan(0);
+      expect(itemStyle.borderColor).toBeTruthy();
+    }
+  });
+
+  it("'brutalist' draws a hard black border with no radius or shadow, switching to white under high_contrast", () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}],visual_style:'brutalist' as const};
+    const flat=(chartOption(validateChatChart(base)!).series as any[])[0].itemStyle;
+    expect(flat.borderColor).toBe('#000000');
+    expect(flat.borderRadius).toBe(0);
+    expect(flat.shadowBlur).toBe(0);
+    const highContrast=(chartOption(validateChatChart({...base,accessibility:{high_contrast:true}})!).series as any[])[0].itemStyle;
+    expect(highContrast.borderColor).toBe('#ffffff');
+  });
+
+  it("'editorial'/'technical'/'hand_drawn' set a distinct font family; 'hand_drawn' also dashes the border", () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}]};
+    const editorial=chartOption(validateChatChart({...base,visual_style:'editorial'})!).textStyle as any;
+    const technical=chartOption(validateChatChart({...base,visual_style:'technical'})!).textStyle as any;
+    expect(editorial.fontFamily).not.toBe(technical.fontFamily);
+    const handDrawn=validateChatChart({...base,visual_style:'hand_drawn'})!;
+    const option=chartOption(handDrawn) as any;
+    expect(option.textStyle.fontFamily).toMatch(/cursive|Comic/);
+    expect(option.series[0].itemStyle.borderType).toBe('dashed');
   });
 });
