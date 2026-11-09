@@ -19,9 +19,11 @@ from prose on reload.
 Initial types: bar, horizontal_bar, lollipop, dumbbell, stacked_bar,
 stacked_bar_100, line, area, step_line, range_area, error_bar, stacked_area,
 stacked_area_100, sparkline, pie, donut, rose, pareto, waterfall, funnel,
-pyramid, waffle, scatter, histogram, box_plot, density, ecdf, strip_plot,
-beeswarm. The `_100` variants normalize each category's series to percentages
-of what is present, without treating an absent series as a zero contributor.
+pyramid, waffle, scatter, bubble, scatter_trend, histogram, box_plot, density,
+ecdf, strip_plot, beeswarm, scatter_matrix, correlation_matrix,
+parallel_coordinates. The `_100` variants normalize each category's series
+to percentages of what is present, without treating an absent series as a
+zero contributor.
 Sparklines reuse the line/area data shape with axes and legend hidden.
 Lollipop is a single named series drawn as a thin stem and a dot. Dumbbell
 compares exactly two named series per category (e.g. before vs after) as two
@@ -36,7 +38,12 @@ from the previous running total, not absolute values. Funnel/pyramid are a
 single nonnegative name/value set rendered with ECharts' native funnel series,
 sorted descending or ascending. Waffle allocates a nonnegative name/value set
 across a 10x10 grid of unit squares by largest-remainder apportionment, so the
-counts always sum to exactly 100.
+counts always sum to exactly 100. Bubble is scatter plus a nonnegative `size`
+per point, drawn with diameter proportional to `sqrt(size)` so the area (what
+the eye compares) scales with the value, not the radius. Scatter_trend is
+scatter plus an ordinary-least-squares trend line fit to every point, pooled
+across series; the line is simply omitted when every x is identical, since
+the slope would be undefined, rather than drawn as a vertical or NaN line.
 
 histogram, box_plot, density, ecdf, strip_plot and beeswarm take raw numeric
 samples (`{name, values: number[]}`) instead of pre-aggregated points — the
@@ -51,11 +58,28 @@ sample with no jitter; beeswarm spreads colliding points sideways within
 local density bins (same binning idea as histogram) so individual
 observations stay visible.
 
-marimekko is intentionally not included: a true variable-width mekko chart
-needs ECharts' `custom` series with a `renderItem` function, which this
-engine deliberately avoids everywhere else in favor of purely declarative
-series (see the range_area/dumbbell/waterfall/error_bar comments in
-`engine.ts`). Revisit if a concrete need for it comes up.
+scatter_matrix, correlation_matrix and parallel_coordinates also use the raw
+`{name, values}` sample shape, but treat each named sample as one column of
+an aligned table: every column needs the same number of rows (2-6 columns,
+for legibility) rather than being independent samples. Scatter_matrix lays
+out an n×n grid of small per-pair scatter cells (skipping the diagonal).
+Correlation_matrix computes the exact pairwise Pearson coefficient for every
+column pair and colors each cell on a blue–white–red diverging scale (the
+diagonal is always exactly 1). Parallel_coordinates gives each column its own
+axis and draws one line per row, using ECharts' native parallel coordinate
+system.
+
+marimekko and violin are intentionally not included. A true variable-width
+mekko chart needs ECharts' `custom` series with a `renderItem` function,
+which this engine deliberately avoids everywhere else in favor of purely
+declarative series (see the range_area/dumbbell/waterfall/error_bar comments
+in `engine.ts`). Violin needs a density curve mirrored sideways around each
+category's center, which would need stacking along a value axis in an
+orientation this engine hasn't verified ECharts actually supports
+declaratively — and unlike every other type here, that assumption can't be
+checked by this test suite, since it only inspects the resulting option
+object, never real rendering. Revisit either if a concrete need comes up and
+there's a way to verify the rendering.
 
 Themes: default, minimal, presentation, high_contrast. Appearance: auto,
 light, dark. Use numeric x/y points for scatter. `auto` follows the device's

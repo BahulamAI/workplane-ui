@@ -1,9 +1,10 @@
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent, AriaComponent } from 'echarts/components';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries } from './contract.js';
-echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, GridComponent, LegendComponent, TooltipComponent, AriaComponent, SVGRenderer]);
+import { validateChatChart, SAMPLE_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries } from './contract.js';
+echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart,
+  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
   minimal: ['#475569', '#64748b', '#94a3b8', '#334155', '#0f766e', '#9a3412'],
@@ -46,6 +47,21 @@ function gaussianKde(values: number[], grid: number[]): number[] {
  * transform does, then spreads each bin's points symmetrically around the
  * lane center in input order. No randomness, no collision search.
  */
+function pearson(a: number[], b: number[]): number {
+  const meanA = a.reduce((sum, v) => sum + v, 0) / a.length;
+  const meanB = b.reduce((sum, v) => sum + v, 0) / b.length;
+  const cov = a.reduce((sum, v, k) => sum + (v - meanA) * (b[k]! - meanB), 0);
+  const sdA = Math.sqrt(a.reduce((sum, v) => sum + (v - meanA) ** 2, 0));
+  const sdB = Math.sqrt(b.reduce((sum, v) => sum + (v - meanB) ** 2, 0));
+  return sdA === 0 || sdB === 0 ? 0 : cov / (sdA * sdB);
+}
+/** Blue (negative) – white (zero) – red (positive), for a value in [-1, 1]. */
+function divergingColor(t: number): string {
+  const clamped = Math.max(-1, Math.min(1, t));
+  const mix = (from: number[], to: number[], f: number) => from.map((v, i) => Math.round(v + (to[i]! - v) * f));
+  const [r, g, b] = clamped < 0 ? mix([255, 255, 255], [37, 99, 235], -clamped) : mix([255, 255, 255], [220, 38, 38], clamped);
+  return `rgb(${r},${g},${b})`;
+}
 function beeswarmOffsets(values: number[], step = 0.06): number[] {
   const min = Math.min(...values), max = Math.max(...values);
   const bins = Math.max(1, Math.min(20, Math.ceil(Math.sqrt(values.length))));
@@ -132,6 +148,62 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       });
       return option;
     }
+    if (type === 'scatter_matrix') {
+      // Validated: 2-6 equal-length columns, one row per observation across
+      // all of them. An n×n grid of small scatter plots, one per column
+      // pair; the diagonal is left empty with just the column's own name.
+      const dims = samples, n = dims.length;
+      const gap = 3, margin = 6;
+      const cell = (100 - margin * 2 - gap * (n - 1)) / n;
+      const grids: Record<string, unknown>[] = [];
+      const xAxes: Record<string, unknown>[] = [];
+      const yAxes: Record<string, unknown>[] = [];
+      const cellSeries: Record<string, unknown>[] = [];
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+        const idx = r * n + c;
+        grids.push({ left: `${margin + c * (cell + gap)}%`, top: `${margin + r * (cell + gap)}%`, width: `${cell}%`, height: `${cell}%` });
+        xAxes.push({ type: 'value', gridIndex: idx, show: r === n - 1, name: r === n - 1 ? dims[c]!.name : undefined,
+          axisLabel: { color: text, fontSize: 9 }, axisLine: { lineStyle: { color: grid } }, splitLine: { show: false } });
+        yAxes.push({ type: 'value', gridIndex: idx, show: c === 0, name: c === 0 ? dims[r]!.name : undefined,
+          axisLabel: { color: text, fontSize: 9 }, axisLine: { lineStyle: { color: grid } }, splitLine: { show: false } });
+        if (r !== c) cellSeries.push({ type: 'scatter', xAxisIndex: idx, yAxisIndex: idx, symbolSize: 4,
+          itemStyle: { color: color[0], opacity: 0.6 }, data: dims[c]!.values.map((x, k) => [x, dims[r]!.values[k]]) });
+      }
+      option.grid = grids; option.xAxis = xAxes; option.yAxis = yAxes;
+      option.legend = { show: false };
+      option.series = cellSeries;
+      return option;
+    }
+    if (type === 'correlation_matrix') {
+      // Validated: 2-6 equal-length columns. The diagonal is always 1 (a
+      // column's correlation with itself) without needing to compute it.
+      const dims = samples, n = dims.length;
+      const names = dims.map(d => d.name);
+      const cells: Record<string, unknown>[] = [];
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+        const r2 = r === c ? 1 : pearson(dims[r]!.values, dims[c]!.values);
+        const rounded = Math.round(r2 * 100) / 100;
+        cells.push({ value: [c, r, rounded], itemStyle: { color: divergingColor(rounded) } });
+      }
+      option.xAxis = { type: 'category', data: names, axisLabel: { color: text } };
+      option.yAxis = { type: 'category', data: names, axisLabel: { color: text } };
+      option.legend = { show: false };
+      option.series = [{ type: 'heatmap', data: cells, label: { show: true, color: text } }];
+      return option;
+    }
+    if (type === 'parallel_coordinates') {
+      // Validated: 2-6 equal-length columns, one row per observation. Each
+      // row becomes one line crossing every column's own axis.
+      const dims = samples;
+      const rows = dims[0]!.values.length;
+      (option as Record<string, unknown>).parallelAxis = dims.map((d, i) => ({ dim: i, name: d.name,
+        nameTextStyle: { color: text }, axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } }));
+      (option as Record<string, unknown>).parallel = { left: 80, right: 60, top: 40, bottom: 40 };
+      option.legend = { show: false };
+      option.series = [{ type: 'parallel', lineStyle: { color: color[0], opacity: 0.35, width: 1 },
+        data: Array.from({ length: rows }, (_, r) => dims.map(d => d.values[r])) }];
+      return option;
+    }
     // strip_plot and beeswarm: one lane per named sample, raw points along
     // the value axis; beeswarm additionally spreads overlap sideways.
     option.xAxis = { type: 'category', data: samples.map(s => s.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
@@ -162,7 +234,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
     aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
-    tooltip: { trigger: pie || funnel || type === 'scatter' || type === 'waffle' ? 'item' : 'axis', renderMode: 'richText', confine: true },
+    tooltip: { trigger: pie || funnel || type === 'scatter' || type === 'scatter_trend' || type === 'bubble' || type === 'waffle' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     legend: { show: !sparkline && (pie || funnel || series.length > 1), type: 'scroll', bottom: 0, textStyle: { color: text } },
     grid: sparkline ? { left: 2, right: 2, top: 2, bottom: 2 } : { left: 60, right: 24, top: 24, bottom: 65, containLabel: true },
   };
@@ -197,12 +269,31 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     });
     return option;
   }
+  if (type === 'bubble') {
+    // Validated to always be the named multi-series wrapper.
+    const bubbles = payload.series as BubbleSeries[];
+    const allSizes = bubbles.flatMap(b => b.points.map(p => p.size));
+    const minSize = Math.min(...allSizes), maxSize = Math.max(...allSizes);
+    const minPx = 8, maxPx = 60;
+    // Diameter scales with sqrt(size), so the *area* — what the eye actually
+    // compares — is proportional to size, not the radius.
+    const diameter = (size: number) => maxSize > minSize
+      ? minPx + (maxPx - minPx) * Math.sqrt((size - minSize) / (maxSize - minSize))
+      : (minPx + maxPx) / 2;
+    option.xAxis = { type: 'value', name: payload.x_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+    option.yAxis = { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+    option.legend = { show: bubbles.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: bubbles.map(b => b.name) };
+    option.series = bubbles.map((b, i) => ({ name: b.name, type: 'scatter',
+      itemStyle: { color: color[i % color.length], opacity: 0.7 },
+      data: b.points.map(p => ({ value: [p.x, p.y], symbolSize: diameter(p.size) })) }));
+    return option;
+  }
   const categoryAxis = { type: 'category', data: categories, name: sparkline ? undefined : payload.x_label,
     show: !sparkline, axisLabel: { show: !sparkline, color: text }, axisLine: { show: !sparkline, lineStyle: { color: grid } } };
   const valueAxis = { type: 'value', ...(percent ? { min: 0, max: 100 } : {}), name: sparkline ? undefined : payload.y_label, show: !sparkline,
     axisLabel: { show: !sparkline, color: text, ...(percent ? { formatter: '{value}%' } : {}) },
     splitLine: { show: !sparkline, lineStyle: { color: grid } } };
-  option.xAxis = type === 'horizontal_bar' ? valueAxis : type === 'scatter' ? { ...valueAxis, name: payload.x_label } : categoryAxis;
+  option.xAxis = type === 'horizontal_bar' ? valueAxis : (type === 'scatter' || type === 'scatter_trend') ? { ...valueAxis, name: payload.x_label } : categoryAxis;
   option.yAxis = type === 'horizontal_bar' ? categoryAxis : valueAxis;
   // range_area, dumbbell and lollipop all share the axes/grid/tooltip set up
   // above; only their series need a different shape than bar/line/scatter.
@@ -329,13 +420,34 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       }))
     : aligned;
   option.series = series.map((s, i) => ({ name: s.name,
-    type: type === 'scatter' ? 'scatter' : type.includes('bar') ? 'bar' : 'line',
+    type: type === 'scatter' || type === 'scatter_trend' ? 'scatter' : type.includes('bar') ? 'bar' : 'line',
     ...(type.startsWith('stacked_') ? { stack: 'total' } : {}),
     ...(type.includes('area') ? { areaStyle: { opacity: 0.22 } } : {}),
     ...(type === 'step_line' ? { step: 'start' } : {}),
     lineStyle: { type: ['solid', 'dashed', 'dotted'][i % 3] }, symbol: sparkline ? 'none' : ['circle', 'rect', 'triangle', 'diamond'][i % 4],
-    data: type === 'scatter' ? s.points.map((p, index) => [typeof p.x === 'number' ? p.x : index, p.y]) : data[i],
+    data: (type === 'scatter' || type === 'scatter_trend') ? s.points.map((p, index) => [typeof p.x === 'number' ? p.x : index, p.y]) : data[i],
   }));
+  if (type === 'scatter_trend') {
+    // Ordinary least squares over every numeric-x point, pooled across all
+    // series. Omitted (not degraded into a vertical or NaN line) when every
+    // x is identical, since the slope is then undefined.
+    const points = series.flatMap(s => s.points).filter((p): p is { x: number; y: number } => typeof p.x === 'number');
+    if (points.length >= 2) {
+      const n = points.length;
+      const meanX = points.reduce((sum, p) => sum + p.x, 0) / n;
+      const meanY = points.reduce((sum, p) => sum + p.y, 0) / n;
+      const varX = points.reduce((sum, p) => sum + (p.x - meanX) ** 2, 0);
+      if (varX > 0) {
+        const slope = points.reduce((sum, p) => sum + (p.x - meanX) * (p.y - meanY), 0) / varX;
+        const intercept = meanY - slope * meanX;
+        const xs = points.map(p => p.x);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        (option.series as Record<string, unknown>[]).push({ name: 'Trend', type: 'line', symbol: 'none',
+          lineStyle: { type: 'dashed', color: text },
+          data: [[minX, slope * minX + intercept], [maxX, slope * maxX + intercept]] });
+      }
+    }
+  }
   return option;
 }
 export function mountChatChart(container: HTMLElement, raw: unknown) {

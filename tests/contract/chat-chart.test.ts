@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
+import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
 import { chartOption } from '../../packages/workplane-ui/src/chat/engine';
 // Most types accept the plain {label, value} shape; a few need a shape that
 // shows what makes them distinct (range_area/error_bar's bounds, dumbbell's
-// exactly-two series, the sample types' raw values) to even validate.
+// exactly-two series, the sample types' raw values, bubble's size) to even
+// validate.
 const fixtureFor = (chart_type: string) =>
   (chart_type === 'range_area' || chart_type === 'error_bar') ? [{name:'one',points:[{x:'A',low:1,high:5}]}]
   : chart_type === 'dumbbell' ? [{name:'before',points:[{x:'A',y:1}]},{name:'after',points:[{x:'A',y:9}]}]
+  : chart_type === 'bubble' ? [{name:'one',points:[{x:1,y:2,size:3}]}]
+  : (ALIGNED_SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'x',values:[1,2,3]},{name:'y',values:[4,5,6]}]
   : (SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'one',values:[1,2,2,3,5,8]}]
   : [{label:'A',value:5},{label:'B',value:9}];
 describe('portable chat chart contract', () => {
@@ -229,6 +232,56 @@ describe('portable chat chart contract', () => {
     expect(offsets[0]).toBeCloseTo(-0.06,5);
     expect(offsets[1]).toBeCloseTo(0,5);
     expect(offsets[2]).toBeCloseTo(0.06,5);
+  });
+  it('rejects a negative bubble size and scales diameter by sqrt(size) so area, not radius, is proportional', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bubble'};
+    expect(validateChatChart({...base,series:[{name:'a',points:[{x:1,y:1,size:-1}]}]})).toBeNull();
+    const chart=validateChatChart({...base,series:[{name:'a',points:[{x:1,y:1,size:1},{x:2,y:2,size:9}]}]});
+    const data=(chartOption(chart!).series as any[])[0].data;
+    expect(data[0].symbolSize).toBeCloseTo(8,5); // smallest size maps to the minimum diameter
+    expect(data[1].symbolSize).toBeCloseTo(60,5); // largest size maps to the maximum diameter
+  });
+  it('fits an exact OLS trend line through scatter_trend points, and omits it when every x is identical', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'scatter_trend',series:[
+      {name:'a',points:[{x:1,y:2},{x:2,y:4},{x:3,y:6}]}]}); // y = 2x exactly
+    const trend=(chartOption(chart!).series as any[]).find(s=>s.name==='Trend');
+    expect(trend.data).toEqual([[1,2],[3,6]]);
+    const degenerate=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'scatter_trend',series:[
+      {name:'a',points:[{x:5,y:1},{x:5,y:9}]}]});
+    expect((chartOption(degenerate!).series as any[]).find(s=>s.name==='Trend')).toBeUndefined();
+  });
+  it('requires 2-6 equal-length columns for the aligned relationship types', () => {
+    const tooFew={schema_version:'bahulam_render_v1',type:'chart',chart_type:'scatter_matrix',series:[{name:'x',values:[1,2]}]};
+    expect(validateChatChart(tooFew)).toBeNull();
+    const mismatched={schema_version:'bahulam_render_v1',type:'chart',chart_type:'correlation_matrix',series:[
+      {name:'x',values:[1,2,3]},{name:'y',values:[1,2]}]};
+    expect(validateChatChart(mismatched)).toBeNull();
+  });
+  it('lays out a scatter_matrix as an n×n grid of per-pair scatter cells, skipping the diagonal', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'scatter_matrix',series:[
+      {name:'x',values:[1,2,3]},{name:'y',values:[4,5,6]}]});
+    const option=chartOption(chart!);
+    expect(option.grid).toHaveLength(4); // 2x2
+    const series=option.series as any[];
+    expect(series).toHaveLength(2); // off-diagonal cells only
+    expect(series[0].data).toEqual([[4,1],[5,2],[6,3]]); // column y (x-axis) vs column x (y-axis)
+  });
+  it('computes an exact pairwise Pearson correlation_matrix with a diverging color per cell', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'correlation_matrix',series:[
+      {name:'a',values:[1,2,3]},{name:'b',values:[3,2,1]}]}); // perfectly anti-correlated
+    const cells=(chartOption(chart!).series as any[])[0].data;
+    expect(cells[0].value).toEqual([0,0,1]); // a vs a: always 1
+    expect(cells[1].value).toEqual([1,0,-1]); // a vs b: -1
+    expect(cells[1].itemStyle.color).toBe('rgb(37,99,235)'); // fully blue at -1
+    expect(cells[3].value).toEqual([1,1,1]); // b vs b: always 1
+  });
+  it('builds parallel_coordinates with one axis per column and one row per observation', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'parallel_coordinates',series:[
+      {name:'a',values:[1,2]},{name:'b',values:[3,4]}]});
+    const option=chartOption(chart!) as any;
+    expect(option.parallelAxis).toHaveLength(2);
+    expect(option.parallelAxis.map((a:any)=>a.name)).toEqual(['a','b']);
+    expect(option.series[0].data).toEqual([[1,3],[2,4]]);
   });
 });
 

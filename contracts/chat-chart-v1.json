@@ -79,6 +79,13 @@
     },
     {
       "types": [
+        "rose"
+      ],
+      "purpose": "Like pie, but each slice's radius scales with its value instead of just its angle, which emphasizes magnitude differences more strongly; nonnegative.",
+      "status": "supported"
+    },
+    {
+      "types": [
         "pareto"
       ],
       "purpose": "Rank nonnegative categories by contribution and overlay cumulative percentage to find the vital few; single series only.",
@@ -101,9 +108,65 @@
     },
     {
       "types": [
+        "waffle"
+      ],
+      "purpose": "Show nonnegative parts of a whole as a 10x10 grid of unit squares, one block per percentage point; best for one proportion at a glance, not precise multi-way comparison.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "error_bar"
+      ],
+      "purpose": "Show a measurement plus its uncertainty range; like range_area but for a single point per x rather than a continuous band. Give low/high (and an explicit value if the drawn point is not their midpoint).",
+      "status": "supported"
+    },
+    {
+      "types": [
         "scatter"
       ],
       "purpose": "Show relationships between two numeric measurements; use numeric x/y points.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "histogram"
+      ],
+      "purpose": "Show the distribution of one sample of raw numeric observations, auto-binned into equal-width bins; single series only.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "box_plot"
+      ],
+      "purpose": "Show the five-number summary (min, quartiles, max) of one or more named samples of raw observations, for comparing distributions across groups.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "density"
+      ],
+      "purpose": "Show a smoothed estimate of the distribution shape of one or more named samples, as a continuous curve rather than discrete bins.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "ecdf"
+      ],
+      "purpose": "Show what fraction of a sample falls at or below each value, as a nondecreasing step curve from 0 to 1; good for comparing whole distributions without binning.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "strip_plot"
+      ],
+      "purpose": "Show every raw observation of one or more named samples as points along one lane per sample, with no binning or smoothing.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "beeswarm"
+      ],
+      "purpose": "Like strip_plot, but spreads overlapping points sideways within local density bins so individual observations stay visible rather than stacking on top of each other.",
       "status": "supported"
     }
   ],
@@ -134,16 +197,25 @@
           "area",
           "step_line",
           "range_area",
+          "error_bar",
           "stacked_area",
           "stacked_area_100",
           "sparkline",
           "pie",
           "donut",
+          "rose",
           "pareto",
           "waterfall",
           "funnel",
           "pyramid",
-          "scatter"
+          "waffle",
+          "scatter",
+          "histogram",
+          "box_plot",
+          "density",
+          "ecdf",
+          "strip_plot",
+          "beeswarm"
         ]
       },
       "title": {
@@ -265,8 +337,33 @@
                       },
                       "high": {
                         "type": "number"
+                      },
+                      "value": {
+                        "type": "number"
                       }
                     }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "values"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "values": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 2000,
+                  "items": {
+                    "type": "number"
                   }
                 }
               }
@@ -305,12 +402,107 @@
         "if": {
           "properties": {
             "chart_type": {
+              "not": {
+                "enum": [
+                  "range_area",
+                  "error_bar",
+                  "histogram",
+                  "box_plot",
+                  "density",
+                  "ecdf",
+                  "strip_plot",
+                  "beeswarm"
+                ]
+              }
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "points"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "points": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "properties": {
+                            "x": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
               "enum": [
                 "stacked_bar_100",
                 "stacked_area_100",
                 "pareto",
                 "funnel",
-                "pyramid"
+                "pyramid",
+                "rose",
+                "waffle"
               ]
             }
           },
@@ -433,7 +625,10 @@
         "if": {
           "properties": {
             "chart_type": {
-              "const": "range_area"
+              "enum": [
+                "range_area",
+                "error_bar"
+              ]
             }
           },
           "required": [
@@ -485,6 +680,9 @@
                         },
                         "high": {
                           "type": "number"
+                        },
+                        "value": {
+                          "type": "number"
                         }
                       }
                     }
@@ -493,74 +691,71 @@
               }
             }
           }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "enum": [
+                "histogram",
+                "box_plot",
+                "density",
+                "ecdf",
+                "strip_plot",
+                "beeswarm"
+              ]
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
         },
-        "else": {
+        "then": {
           "properties": {
             "series": {
+              "maxItems": 12,
               "items": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "label",
-                      "value"
-                    ],
-                    "properties": {
-                      "label": {
-                        "type": "string",
-                        "maxLength": 300
-                      },
-                      "value": {
-                        "type": "number"
-                      }
-                    }
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "values"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 300
                   },
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "name",
-                      "points"
-                    ],
-                    "properties": {
-                      "name": {
-                        "type": "string",
-                        "maxLength": 300
-                      },
-                      "points": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 500,
-                        "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "x",
-                            "y"
-                          ],
-                          "properties": {
-                            "x": {
-                              "anyOf": [
-                                {
-                                  "type": "string",
-                                  "maxLength": 300
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "y": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      }
+                  "values": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 2000,
+                    "items": {
+                      "type": "number"
                     }
                   }
-                ]
+                }
               }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "const": "histogram"
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "maxItems": 1
             }
           }
         }
