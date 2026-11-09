@@ -9,8 +9,8 @@ import {
   rate,
   subtract,
   toMajor,
-} from "@bahulam/workplane-data";
-import { scenarioFromPercentages } from "@bahulam/workplane-testkit";
+} from "@bahulam/workplane-ui";
+import { scenarioFromPercentages } from "@bahulam/workplane-ui/testkit";
 
 describe("minor-unit money", () => {
   it("rejects fractional minor units outright", () => {

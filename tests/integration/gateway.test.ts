@@ -4,7 +4,7 @@ import {
   MemoryStorage,
   type CommitResult,
   type Transaction,
-} from "@bahulam/workplane-core";
+} from "@bahulam/workplane-ui";
 import {
   createDemoDocument,
   DEMO_AGENT,
@@ -13,7 +13,7 @@ import {
   DEMO_VIEWER,
   OVERVIEW_OPERATIONS,
   transaction,
-} from "@bahulam/workplane-testkit";
+} from "@bahulam/workplane-ui/testkit";
 
 function harness() {
   const storage = new MemoryStorage(createDemoDocument());
@@ -261,5 +261,177 @@ describe("limits", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("RESOURCE_LIMIT");
+  });
+});
+
+describe("a block must be renderable", () => {
+  /**
+   * An agent sent widget-shaped blocks to block.add — {id, type, title, value,
+   * data} instead of {id, kind, title, rendererId, specVersion, spec}. The
+   * unrecognised fields became undefined and the document accepted three blocks
+   * with no renderer, which nothing could ever display.
+   */
+  const widgetShaped = {
+    id: "metric-summary",
+    type: "metric",
+    title: "Projection Summary (INR)",
+    value: "₹3,000/day",
+    data: [{ label: "Run Rate", value: "₹3,000/day" }],
+  } as never;
+
+  it("rejects a block with no rendererId", async () => {
+    const { authority } = harness();
+    const result = await authority.commit(
+      transaction("cmd_no_renderer", 0, [
+        { op: "scene.add", scene: { id: "p", title: "P" } },
+        { op: "block.add", sceneId: "p", block: widgetShaped },
+      ]),
+      DEMO_AGENT,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    // Reported against the SUBMITTED transaction, not the resulting document,
+    // so the path is one an agent can edit. Every missing field at once.
+    const all = String(result.error.detail?.all ?? "");
+    for (const field of ["kind", "rendererId", "specVersion"]) {
+      expect(all, `${field} not reported`).toContain(`/operations/1/block/${field}`);
+    }
+    // And it names the mistake that produced this payload.
+    expect(all).toMatch(/This is a widget, not a block/);
+  });
+
+  it("leaves nothing behind when it rejects", async () => {
+    const { authority } = harness();
+    await authority.commit(
+      transaction("cmd_x", 0, [
+        { op: "scene.add", scene: { id: "p", title: "P" } },
+        { op: "block.add", sceneId: "p", block: widgetShaped },
+      ]),
+      DEMO_AGENT,
+    );
+    const snapshot = await authority.snapshot("wp_azure_demo");
+    expect(snapshot?.revision).toBe(0);
+    expect(snapshot?.scenes.p).toBeUndefined();
+  });
+
+  it("names every required field that is missing", async () => {
+    const { authority } = harness();
+    for (const [field, block] of [
+      ["specVersion", { id: "b", kind: "k", title: "T", rendererId: "workplane.text", spec: {} }],
+      ["spec", { id: "b", kind: "k", title: "T", rendererId: "workplane.text", specVersion: "1" }],
+      ["kind", { id: "b", title: "T", rendererId: "workplane.text", specVersion: "1", spec: {} }],
+    ] as const) {
+      const result = await authority.commit(
+        transaction(`cmd_${field}`, 0, [
+          { op: "scene.add", scene: { id: "s", title: "S" } },
+          { op: "block.add", sceneId: "s", block: block as never },
+        ]),
+        DEMO_AGENT,
+      );
+      expect(result.ok, `${field} was accepted`).toBe(false);
+      if (result.ok) continue;
+      expect(result.error.path).toContain(field);
+    }
+  });
+
+  it("does not freeze a document that is ALREADY damaged", async () => {
+    // Without this, a document containing one bad block could never be edited
+    // again — including by the transaction that would remove the bad block.
+    const damaged = createDemoDocument();
+    damaged.sceneOrder = ["broken"];
+    damaged.scenes.broken = { id: "broken", title: "Broken", layout: "flow", blockOrder: ["bad"], parameters: {} };
+    damaged.blocks.bad = { id: "bad", kind: "", title: "Bad", rendererId: "", specVersion: "", spec: {}, bindings: {}, dataRefs: [], fallback: "" } as never;
+
+    const authority = new LocalAuthority({ storage: new MemoryStorage(damaged), policy: DEMO_POLICY });
+
+    // A valid edit elsewhere still works.
+    const edit = await authority.commit(
+      transaction("cmd_ok", 0, [{ op: "state.set", path: "/filters/period", value: "2026-07" }]),
+      DEMO_USER,
+    );
+    expect(edit.ok, "a pre-existing defect froze the whole document").toBe(true);
+
+    // And the repair itself is permitted.
+    const repair = await authority.commit(
+      transaction("cmd_repair", 1, [{ op: "block.remove", blockId: "bad" }]),
+      DEMO_USER,
+    );
+    expect(repair.ok).toBe(true);
+    if (!repair.ok) return;
+    expect(repair.document.blocks.bad).toBeUndefined();
+
+    // But NEW damage is still refused.
+    const more = await authority.commit(
+      transaction("cmd_more", 2, [
+        { op: "block.add", sceneId: "broken", block: widgetShaped },
+      ]),
+      DEMO_AGENT,
+    );
+    expect(more.ok).toBe(false);
+  });
+});
+
+describe("a malformed operation says what is wrong", () => {
+  /**
+   * These all used to reach the reducer, throw a TypeError or a bare Error, and
+   * come back as "INTERNAL_ERROR: the transaction could not be applied" — which
+   * tells an agent nothing and invites it to retry the identical payload.
+   */
+  const cases: Array<[string, unknown, RegExp, string]> = [
+    ["a widget sent where a block belongs",
+      { op: "block.add", sceneId: "s", block: { id: "m", type: "metric", title: "T", value: 7 } },
+      /This is a widget, not a block/, "/operations/0/block"],
+    ["scene.add with no scene", { op: "scene.add" }, /requires "scene"/, "/operations/0/scene"],
+    ["scene.update with no patch", { op: "scene.update", sceneId: "s" }, /requires "patch"/, "/operations/0/patch"],
+    ["block.add with no block", { op: "block.add", sceneId: "s" }, /requires "block"/, "/operations/0/block"],
+    ["block.move with no target scene", { op: "block.move", blockId: "b" }, /"sceneId"/, "/operations/0/sceneId"],
+    ["state.set with no leading slash", { op: "state.set", path: "filters/x", value: 1 },
+      /JSON Pointer starting with/, "/operations/0/path"],
+    ["state.set with no value", { op: "state.set", path: "/x" }, /"value" is required/, "/operations/0/value"],
+    ["an unknown operation", { op: "block.frobnicate" }, /Unsupported operation/, "/operations/0/op"],
+    ["an operation that is not an object", "block.add", /must be an object/, "/operations/0"],
+  ];
+
+  it.each(cases)("%s", async (_name, operation, pattern, path) => {
+    const { authority } = harness();
+    const result = await authority.commit(
+      transaction("cmd_shape", 0, [operation as never]),
+      DEMO_AGENT,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code, "a caller mistake is not an INTERNAL_ERROR").toBe("VALIDATION_FAILED");
+    expect(result.error.message).toMatch(pattern);
+    expect(result.error.path).toBe(path);
+  });
+
+  it("never reports a caller mistake as INTERNAL_ERROR", async () => {
+    const { authority } = harness();
+    for (const [, operation] of cases) {
+      const result = await authority.commit(
+        transaction(`cmd_${Math.random()}`, 0, [operation as never]),
+        DEMO_AGENT,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).not.toBe("INTERNAL_ERROR");
+    }
+  });
+
+  it("reports every problem in the transaction, not just the first", async () => {
+    const { authority } = harness();
+    const result = await authority.commit(
+      transaction("cmd_many", 0, [
+        { op: "scene.add" } as never,
+        { op: "state.set", path: "bad" } as never,
+      ]),
+      DEMO_AGENT,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const all = String(result.error.detail?.all ?? "");
+    expect(all).toContain("/operations/0/scene");
+    expect(all).toContain("/operations/1/path");
+    expect(result.error.detail?.violations).toBeGreaterThanOrEqual(3);
   });
 });

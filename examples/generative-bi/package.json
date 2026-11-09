@@ -10,12 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@bahulam/workplane-core": "workspace:*",
-    "@bahulam/workplane-data": "workspace:*",
-    "@bahulam/workplane-protocol": "workspace:*",
-    "@bahulam/workplane-react": "workspace:*",
-    "@bahulam/workplane-renderer-echarts": "workspace:*",
-    "@bahulam/workplane-testkit": "workspace:*",
+    "@bahulam/workplane-ui": "workspace:*",
     "echarts": "^5.5.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

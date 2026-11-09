@@ -1,5 +1,5 @@
-import type { CommandReceipt, CommitBundle, StoragePort, WorkplaneDocument } from "@bahulam/workplane-core";
-import type { CommittedEvent } from "@bahulam/workplane-protocol";
+import type { CommandReceipt, CommitBundle, StoragePort, WorkplaneDocument } from "@bahulam/workplane-ui";
+import type { CommittedEvent } from "@bahulam/workplane-ui";
 
 interface Persisted {
   document: WorkplaneDocument;

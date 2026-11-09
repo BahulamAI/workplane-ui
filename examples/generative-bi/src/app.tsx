@@ -3,7 +3,7 @@ import {
   LocalAuthority,
   WorkplaneController,
   type PresentationMode,
-} from "@bahulam/workplane-core";
+} from "@bahulam/workplane-ui";
 import {
   createNativeRegistry,
   createPresenterRegistry,
@@ -12,8 +12,8 @@ import {
   useViewState,
   useWorkplaneContext,
   WorkplaneProvider,
-} from "@bahulam/workplane-react";
-import { echartsRenderer } from "@bahulam/workplane-renderer-echarts";
+} from "@bahulam/workplane-ui/react";
+import { echartsRenderer } from "@bahulam/workplane-ui/echarts";
 import {
   createDemoDocument,
   DEMO_AGENT,
@@ -24,7 +24,7 @@ import {
   SCENARIO_OPERATIONS,
   SyntheticCostProvider,
   transaction,
-} from "@bahulam/workplane-testkit";
+} from "@bahulam/workplane-ui/testkit";
 import { scenarioRenderer } from "./scenario-renderer.js";
 import { LocalStorageAdapter, viewPreferences } from "./storage.js";
 
