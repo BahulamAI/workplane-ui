@@ -88,10 +88,15 @@ export interface HierarchyNode { name: string; value?: number; children?: Hierar
 // Used by sankey/graph: one combined graph per chart. `name` defaults to
 // `id` for both node identity in links and the displayed label. sankey
 // requires every link's `value` (it sizes the flow); graph does not.
+// `type` names a relationship/edge category (e.g. "dependency",
+// "similarity"): links sharing a type get a stable, distinct color, and for
+// graph (not sankey, where it would clutter the flow ribbons) a visible
+// edge label. `directed` draws an arrowhead and is graph-only — sankey's
+// source->target flow is already inherently directed.
 export interface GraphSeries {
   name?: string;
   nodes: { id: string; name?: string; value?: number; category?: string }[];
-  links: { source: string; target: string; value?: number }[];
+  links: { source: string; target: string; value?: number; type?: string; directed?: boolean }[];
 }
 // Density controls spacing, font/symbol size and label thresholds — never
 // which data is shown. Independent of theme (palette) and appearance
@@ -185,7 +190,7 @@ const graphSeries = { type: 'object', additionalProperties: false, required: ['n
     id: text, name: text, value: { type: 'number', minimum: 0 }, category: text,
   } } },
   links: { type: 'array', minItems: 1, maxItems: 300, items: { type: 'object', additionalProperties: false, required: ['source', 'target'], properties: {
-    source: text, target: text, value: { type: 'number', minimum: 0 },
+    source: text, target: text, value: { type: 'number', minimum: 0 }, type: text, directed: { type: 'boolean' },
   } } },
 } };
 export const chartToolSchema = {
@@ -395,10 +400,10 @@ export const chartCatalog = {
     { types: ['tree'], purpose: 'Show a nested hierarchy as a rooted node-link layout (dendrogram); exactly one top-level root, since a rooted layout cannot draw several trees at once.', status: 'supported',
       unsuitable_for: 'More than one root, or a very deep/wide hierarchy — labels crowd fast.',
       example: { chart_type: 'tree', series: [{ name: 'Root', children: [{ name: 'Child A', value: 1 }, { name: 'Child B', value: 1 }] }] } },
-    { types: ['sankey'], purpose: "Show weighted flow between stages as proportionally-sized ribbons; one combined {nodes, links} graph, every link needs a nonnegative value since it sizes the flow's width.", status: 'supported',
+    { types: ['sankey'], purpose: "Show weighted flow between stages as proportionally-sized ribbons; one combined {nodes, links} graph, every link needs a nonnegative value since it sizes the flow's width. A link's optional `type` gives flows of that relationship a stable, distinct color.", status: 'supported',
       unsuitable_for: 'A true network with cycles or bidirectional flow — sankey assumes a left-to-right staged flow.',
       example: { chart_type: 'sankey', series: [{ nodes: [{ id: 'visit' }, { id: 'signup' }], links: [{ source: 'visit', target: 'signup', value: 400 }] }] } },
-    { types: ['graph'], purpose: 'Show a node-link network (force-directed layout); one combined {nodes, links} graph, link value is optional and only affects line width, not required the way sankey needs it.', status: 'supported',
+    { types: ['graph'], purpose: "Show a node-link network (force-directed layout); one combined {nodes, links} graph, link value is optional and only affects line width, not required the way sankey needs it. A link's optional `type` (e.g. \"dependency\", \"similarity\") gets a stable color and an edge label distinguishing it from other relationship types between the same nodes; `directed: true` draws an arrowhead.", status: 'supported',
       unsuitable_for: 'More than roughly 100 nodes — the force layout gets crowded and slow past that.',
       example: { chart_type: 'graph', series: [{ nodes: [{ id: 'a' }, { id: 'b' }], links: [{ source: 'a', target: 'b' }] }] } },
   ],
@@ -680,13 +685,17 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
     for (const l of g.links) {
       if (!l || typeof l !== 'object') return null;
       const ln = l as Record<string, unknown>;
-      if (Object.keys(ln).some(k => !['source', 'target', 'value'].includes(k))) return null;
+      if (Object.keys(ln).some(k => !['source', 'target', 'value', 'type', 'directed'].includes(k))) return null;
       if (!label(ln.source) || !ids.has(ln.source as string)) return null;
       if (!label(ln.target) || !ids.has(ln.target as string)) return null;
       // sankey sizes a flow's ribbon width by value; without one there is
       // nothing to draw. graph (node-link) has no such requirement.
       if (p.chart_type === 'sankey' && !finite(ln.value)) return null;
       if (ln.value !== undefined && (!finite(ln.value) || (ln.value as number) < 0)) return null;
+      if (ln.type !== undefined && !label(ln.type)) return null;
+      // Arrowheads are a graph-only affordance; sankey's source->target
+      // flow direction is already drawn by the ribbon itself.
+      if (ln.directed !== undefined && (typeof ln.directed !== 'boolean' || p.chart_type !== 'graph')) return null;
     }
     try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
     return value as ChatChartPresentation;

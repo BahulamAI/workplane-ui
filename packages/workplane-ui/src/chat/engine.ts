@@ -449,7 +449,8 @@ function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts
       option.legend = { show: false };
       option.series = [{ type: 'sankey', emphasis: { focus: 'adjacency' },
         data: g.nodes.map(n => ({ name: nameOf.get(n.id) })),
-        links: g.links.map(l => ({ source: nameOf.get(l.source), target: nameOf.get(l.target), value: l.value })),
+        links: g.links.map(l => ({ source: nameOf.get(l.source), target: nameOf.get(l.target), value: l.value,
+          ...(l.type !== undefined ? { lineStyle: { color: colorForName(l.type, color), opacity: 0.4 } } : {}) })),
         label: { color: text }, lineStyle: { color: 'gradient', opacity: 0.4 },
         itemStyle: { color: color[0], borderColor: grid } }];
     } else {
@@ -461,8 +462,15 @@ function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts
         data: g.nodes.map(n => ({ name: nameOf.get(n.id), value: n.value,
           symbolSize: n.value !== undefined ? Math.max(8, Math.min(50, Math.sqrt(n.value) * 4)) : 20,
           ...(n.category !== undefined ? { category: categories.indexOf(n.category) } : { itemStyle: { color: color[0] } }) })),
+        // `type` gives a relationship/edge category its own stable color
+        // and a visible edge label; `directed` draws an arrowhead. Neither
+        // is set when the link omits them, so existing payloads render
+        // exactly as before.
         links: g.links.map(l => ({ source: nameOf.get(l.source), target: nameOf.get(l.target),
-          lineStyle: { width: l.value !== undefined ? Math.max(1, Math.min(6, l.value)) : 1 } })),
+          lineStyle: { width: l.value !== undefined ? Math.max(1, Math.min(6, l.value)) : 1,
+            ...(l.type !== undefined ? { color: colorForName(l.type, color) } : {}) },
+          ...(l.type !== undefined ? { label: { show: true, formatter: l.type, color: text, fontSize: 10 } } : {}),
+          ...(l.directed ? { symbol: ['none', 'arrow'], symbolSize: [4, 8] } : {}) })),
         lineStyle: { color: grid, curveness: 0.1 },
         force: { repulsion: 100, edgeLength: 80 } }];
     }
@@ -881,13 +889,16 @@ function applyDensity(option: echarts.EChartsCoreOption, density: Density | unde
 export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
   return applyDensity(applyVisualStyle(applyInteractions(chartOptionImpl(payload, dark), payload), payload), payload.density);
 }
-export function mountChatChart(container: HTMLElement, raw: unknown) {
+export function mountChatChart(container: HTMLElement, raw: unknown, onSelect?: (point: { seriesIndex: number; dataIndex: number }) => void) {
   const payload = validateChatChart(raw);
   if (!payload) throw new Error('Unsupported or invalid chart presentation');
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   const chart = echarts.init(container, undefined, { renderer: 'svg' });
   const draw = () => chart.setOption(chartOption(payload, payload.appearance === 'dark' || (payload.appearance !== 'light' && media.matches)), { notMerge: true });
   draw();
+  if (onSelect) chart.on('click', 'series', (event: any) => {
+    if (Number.isInteger(event.seriesIndex) && Number.isInteger(event.dataIndex)) onSelect({ seriesIndex: event.seriesIndex, dataIndex: event.dataIndex });
+  });
   const reset = () => chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
   container.addEventListener('dblclick', reset);
   const resize = new ResizeObserver(() => chart.resize()); resize.observe(container);

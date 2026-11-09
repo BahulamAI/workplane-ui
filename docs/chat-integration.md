@@ -162,6 +162,15 @@ force-directed layout with optional `category` per node for legend
 grouping and coloring, and node size scaled by `sqrt(value)` so area (not
 radius) is proportional, same convention as bubble.
 
+A link's optional `type` (e.g. `"dependency"`, `"similarity"`) distinguishes
+multiple relationship kinds between the same nodes: it gets a stable color
+(the same `colorForName` hash used for series), plus a visible edge label
+for graph (skipped for sankey, where a text label would clutter the flow
+ribbons). `directed: true` draws an arrowhead and is graph-only — rejected
+on sankey links, since sankey's source→target flow is already inherently
+directed by the ribbon itself. Neither field changes how existing payloads
+without them render.
+
 marimekko, violin, icicle, circle_packing, chord, and alluvial-as-a-
 separate-type are intentionally not included. A true variable-width mekko
 chart needs ECharts' `custom` series with a `renderItem` function, which

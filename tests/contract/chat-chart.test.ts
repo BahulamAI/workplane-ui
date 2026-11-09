@@ -490,6 +490,26 @@ describe('portable chat chart contract', () => {
     expect(series.data[0].category).toBe(0);
     expect(series.links[0].lineStyle.width).toBe(1); // no value given -> default width
   });
+  it('colors and labels a graph link by relationship type, and draws an arrowhead when directed', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'graph',series:[
+      {nodes:[{id:'a'},{id:'b'}],links:[{source:'a',target:'b',type:'dependency',directed:true}]}]});
+    const link=(chartOption(chart!).series as any[])[0].links[0];
+    expect(link.lineStyle.color).toBeTruthy();
+    expect(link.label).toEqual({show:true,formatter:'dependency',color:expect.any(String),fontSize:10});
+    expect(link.symbol).toEqual(['none','arrow']);
+  });
+  it('gives same-named sankey link types the same stable color, independent of flat ordering', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'sankey',series:[
+      {nodes:[{id:'a'},{id:'b'},{id:'c'}],links:[{source:'a',target:'b',value:1,type:'x'},{source:'b',target:'c',value:1,type:'x'}]}]});
+    const links=(chartOption(chart!).series as any[])[0].links;
+    expect(links[0].lineStyle.color).toBe(links[1].lineStyle.color);
+  });
+  it('rejects a non-string link type and a directed flag on sankey (arrowheads are graph-only)', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'graph',
+      series:[{nodes:[{id:'a'},{id:'b'}],links:[{source:'a',target:'b',type:5}]}]};
+    expect(validateChatChart(base)).toBeNull();
+    expect(validateChatChart({...base,chart_type:'sankey',series:[{nodes:[{id:'a'},{id:'b'}],links:[{source:'a',target:'b',value:1,directed:true}]}]})).toBeNull();
+  });
 });
 
 describe('adoption safeguards', () => {
