@@ -13,6 +13,23 @@ export const NETWORK_CHART_TYPES = ['sankey', 'graph'] as const;
 // Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
 // or {name, values} wrapper — there is only ever one measurement per name.
 export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
+// Types with exactly one cartesian x/y axis pair (not a multi-grid, polar,
+// calendar or hierarchy/network layout), where zoom/pan and a reference
+// line both make sense and render the same way: `reference_lines` always
+// draws against the value axis, which is unambiguous for all of these.
+export const INTERACTIVE_CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100',
+  'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'scatter', 'bubble', 'scatter_trend',
+  'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'waterfall', 'pareto', 'candlestick',
+  'drawdown', 'cumulative_return', 'gantt', 'bullet', 'progress'] as const;
+// Sorting is unambiguous only where there is exactly one value per named
+// item: the parts-of-a-whole family (always, since multi-series there is
+// summed to one value per series already) and bar/horizontal_bar/lollipop
+// when they are a single series (multi-series would mean sorting by which
+// series' value?, which has no unambiguous answer). funnel/pyramid are
+// deliberately excluded: ECharts' own `sort` on that series type already
+// always value-orders them (descending for funnel, ascending for pyramid)
+// to get the narrowing shape, so a second sort field would be redundant.
+export const SORTABLE_CHART_TYPES = ['pie', 'donut', 'rose', 'waffle', 'bar', 'horizontal_bar', 'lollipop'] as const;
 // These take raw numeric samples (not pre-aggregated label/value pairs); the
 // renderer computes bins, quantiles, a density curve, or (for the last three)
 // pairwise relationships across aligned columns, from them.
@@ -71,12 +88,17 @@ export type Density = typeof DENSITIES[number];
 // `reduced_motion` can override the OS-level prefers-reduced-motion signal
 // in either direction.
 export interface AccessibilityOptions { high_contrast?: boolean; patterns?: boolean; reduced_motion?: boolean }
+// A dashed horizontal (or vertical, for horizontal_bar) line at `value` on
+// the value axis — a target, threshold or baseline to compare the data
+// against, not data itself.
+export interface ReferenceLine { value: number; label?: string }
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
   series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[] | IntervalItem[] | HierarchyNode[] | GraphSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
   density?: Density; accessibility?: AccessibilityOptions;
+  sort?: 'asc' | 'desc'; reference_lines?: ReferenceLine[];
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
 const text = { type: 'string', maxLength: 300 };
@@ -159,6 +181,10 @@ export const chartToolSchema = {
     accessibility: { type: 'object', additionalProperties: false, properties: {
       high_contrast: { type: 'boolean' }, patterns: { type: 'boolean' }, reduced_motion: { type: 'boolean' },
     } },
+    sort: { type: 'string', enum: ['asc', 'desc'] },
+    reference_lines: { type: 'array', maxItems: 10, items: { type: 'object', additionalProperties: false, required: ['value'], properties: {
+      value: { type: 'number' }, label: text,
+    } } },
   },
   allOf: [{
     if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', 'gantt', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES, ...HIERARCHY_CHART_TYPES, ...NETWORK_CHART_TYPES] } } }, required: ['chart_type'] },
@@ -213,6 +239,12 @@ export const chartToolSchema = {
   }, {
     if: { properties: { chart_type: { const: 'lollipop' } }, required: ['chart_type'] },
     then: { properties: { series: { anyOf: [{ items: point }, { maxItems: 1, items: multi }] } } },
+  }, {
+    if: { properties: { chart_type: { not: { enum: SORTABLE_CHART_TYPES } } }, required: ['chart_type'] },
+    then: { properties: { sort: false } },
+  }, {
+    if: { properties: { chart_type: { not: { enum: INTERACTIVE_CHART_TYPES } } }, required: ['chart_type'] },
+    then: { properties: { reference_lines: false } },
   }],
 } as const;
 export const chartCatalog = {
@@ -267,11 +299,21 @@ export const chartCatalog = {
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
   instructions: 'Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.',
+  interactions: {
+    zoom_pan: 'Scroll/pinch to zoom, drag to pan, double-click to reset — built into every chart whose type is in INTERACTIVE_CHART_TYPES; nothing to request.',
+    legend_toggle: 'Click a legend entry to show/hide that series — built into every multi-series chart; nothing to request.',
+    reference_lines: "Optional top-level reference_lines: [{value, label?}], up to 10, for chart types in INTERACTIVE_CHART_TYPES. Draws a dashed line across the value axis — a target or baseline to compare against, not data.",
+    sort: "Optional top-level sort: 'asc'|'desc', for chart types in SORTABLE_CHART_TYPES. Reorders by value; omit it and the input order is kept exactly as given.",
+    export: 'mountChatChart(...) returns svg() and png() for exporting the rendered chart; both are host-side JS calls, not part of the JSON payload.',
+    drill_down_and_cross_filtering: 'Not available from this portable, read-only contract — it requires a host-side data query or document commit, which an agent cannot embed as code. The Generative BI document surface has its own selection/query-bound interaction model for this; the chat contract does not share it.',
+  },
 };
 
 export function validateChatChart(value: unknown): ChatChartPresentation | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const p = value as Record<string, unknown>;
+  const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+  const label = (s: unknown) => typeof s === 'string' && s.length <= 300;
   if (p.schema_version !== 'bahulam_render_v1' || p.type !== 'chart' || !CHART_TYPES.includes(p.chart_type as ChartType)) return null;
   if (p.contract_version !== undefined && p.contract_version !== CHART_CONTRACT_VERSION) return null;
   const keys = new Set([...Object.keys(chartToolSchema.properties), 'schema_version', 'type', 'contract_version']);
@@ -288,10 +330,32 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
       if (a[key] !== undefined && typeof a[key] !== 'boolean') return null;
     }
   }
+  // sort and reference_lines are each meaningful only for a bounded set of
+  // chart types (see the two consts' own comments); reject them elsewhere
+  // rather than silently ignoring a field the caller thought would apply.
+  if (p.sort !== undefined) {
+    if (!['asc', 'desc'].includes(p.sort as string)) return null;
+    if (!(SORTABLE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) return null;
+    // For bar/horizontal_bar/lollipop, sort is unambiguous only for a
+    // single series — reject multi-series rather than silently ignoring
+    // the field (the parts-of-a-whole types are always single-valued per
+    // item regardless of shape, so they need no such check).
+    const isNamedMulti = Array.isArray(p.series) && typeof (p.series[0] as Record<string, unknown> | undefined)?.name === 'string';
+    if (['bar', 'horizontal_bar', 'lollipop'].includes(p.chart_type as string) && isNamedMulti && (p.series as unknown[]).length > 1) return null;
+  }
+  if (p.reference_lines !== undefined) {
+    if (!(INTERACTIVE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) return null;
+    if (!Array.isArray(p.reference_lines) || !p.reference_lines.length || p.reference_lines.length > 10) return null;
+    for (const r of p.reference_lines) {
+      if (!r || typeof r !== 'object') return null;
+      const rl = r as Record<string, unknown>;
+      if (Object.keys(rl).some(k => !['value', 'label'].includes(k))) return null;
+      if (!finite(rl.value)) return null;
+      if (rl.label !== undefined && !label(rl.label)) return null;
+    }
+  }
   if (p.observations !== undefined && (!Array.isArray(p.observations) || p.observations.length > 6 || p.observations.some(x => typeof x !== 'string' || x.length > 1000))) return null;
   if (!Array.isArray(p.series) || !p.series.length || p.series.length > 500) return null;
-  const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
-  const label = (s: unknown) => typeof s === 'string' && s.length <= 300;
 
   // Raw samples are a distinct shape ({name, values: number[]}), not the
   // {name, points} wrapper every other type uses, so they get their own path.

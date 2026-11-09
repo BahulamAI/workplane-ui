@@ -210,6 +210,55 @@ precisely the kind of change this test suite cannot verify, since it
 inspects the built option object, never real rendering. Revisit if there's
 a concrete need and a way to verify each style actually renders safely.
 
+## Interactions
+
+Zoom/pan (scroll/pinch to zoom, drag to pan, double-click to reset) is
+built into every chart_type in `INTERACTIVE_CHART_TYPES` — a plain-cartesian
+single-axis-pair allowlist (excludes multi-grid, polar, calendar and
+hierarchy/network layouts, where it either doesn't apply or ECharts gives a
+different interaction model natively, e.g. `roam` on graph or click-to-zoom
+on treemap/sunburst). Legend click-to-toggle-series is native ECharts
+behavior on every multi-series chart; nothing is disabled. Both require no
+payload field — there is nothing to request.
+
+`sort: 'asc' | 'desc'` reorders by value for `SORTABLE_CHART_TYPES`: the
+parts-of-a-whole family (pie/donut/rose/waffle; funnel/pyramid are
+deliberately excluded, since ECharts' own `sort` on that series type
+already always value-orders them for the narrowing shape) and
+bar/horizontal_bar/lollipop when they are a single series — multi-series
+bar is rejected rather than silently ignored, since "sort by which
+series'value?" has no unambiguous answer.
+
+`reference_lines: [{value, label?}]` (up to 10) draws a dashed line across
+the value axis for `INTERACTIVE_CHART_TYPES` — a target, threshold or
+baseline to compare the data against, attached as a `markLine` on the
+chart's first series.
+
+`mountChatChart(...)` returns `svg()` (unchanged) and now `png()` —
+rasterized via an `<img>`/`<canvas>` round-trip from the SVG, async since
+image decoding is, rather than relying on ECharts' own `getDataURL` png
+support, which targets the canvas renderer and this chart is mounted with
+`renderer: 'svg'`.
+
+Drill-down, cross-filtering and persisted selection state are intentionally
+not part of this contract: they need a host-side data query or document
+commit, which an agent cannot embed as executable code in a JSON payload —
+per the plan's own "an interaction requiring a callback or data query is a
+host capability, not executable code supplied by an agent." Bahulam's own
+interaction runtime (drill-down/up, cross-filtering, filter clearing,
+measure/hierarchy definitions, versioned Redis sessions) is being built for
+this at the host level, separately from this portable contract. The
+Generative BI *document* surface (`examples/generative-bi`,
+`selectionMode: highlight | filter` in the ECharts document adapter) has
+its own, different interaction model already — query-bound, tied to the
+command gateway — which this read-only chat contract does not share.
+
+A textual/table alternative is not yet implemented either: every one of
+the ~10 data shapes in this contract (point/multi, interval, sample,
+bubble, target, heatmap, OHLC, interval-item, hierarchy, graph) would need
+its own table serialization, which is enough work to deserve its own pass
+rather than folding in here.
+
 ## Package entry points
 
 - `@bahulam/workplane-ui/chat`: headless TypeScript contract, validator and catalogue.

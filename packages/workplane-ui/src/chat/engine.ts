@@ -1,10 +1,10 @@
 import * as echarts from 'echarts/core';
 import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart, TreemapChart, SunburstChart, TreeChart, SankeyChart, GraphChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent } from 'echarts/components';
+import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, MarkLineComponent, CalendarComponent, DataZoomComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem, type HierarchyNode, type GraphSeries, type Density } from './contract.js';
+import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, INTERACTIVE_CHART_TYPES, SORTABLE_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem, type HierarchyNode, type GraphSeries, type Density } from './contract.js';
 echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart, TreemapChart, SunburstChart, TreeChart, SankeyChart, GraphChart,
-  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent, SVGRenderer]);
+  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, MarkLineComponent, CalendarComponent, DataZoomComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
   minimal: ['#475569', '#64748b', '#94a3b8', '#334155', '#0f766e', '#9a3412'],
@@ -470,7 +470,15 @@ function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts
   }
   const multi = 'name' in payload.series[0]!;
   const series = multi ? payload.series as ChartSeries[] : [{ name: payload.title || 'Value', points: (payload.series as ChartPoint[]).map(p => ({ x: p.label, y: p.value })) }];
-  const categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
+  let categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
+  // Sorting bar/horizontal_bar/lollipop is unambiguous only for a single
+  // series (see SORTABLE_CHART_TYPES's own comment); reorder the shared
+  // category list itself so every downstream branch sees the new order.
+  if (payload.sort && series.length === 1 && (type === 'bar' || type === 'horizontal_bar' || type === 'lollipop')) {
+    const s0 = series[0]!;
+    const valueOf = (x: string) => s0.points.find(p => String(p.x) === x)?.y ?? 0;
+    categories = [...categories].sort((a, b) => (payload.sort === 'asc' ? valueOf(a) - valueOf(b) : valueOf(b) - valueOf(a)));
+  }
   const pie = type === 'pie' || type === 'donut' || type === 'rose';
   // Funnel/pyramid share the pie branch below: both are a single ranked set
   // of nonnegative name/value slices with no cartesian axes, differing only
@@ -492,6 +500,9 @@ function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts
   if (pie || funnel) {
     const data = multi ? series.map(s => ({ name: s.name, value: s.points.reduce((sum, p) => sum + p.y, 0) }))
       : series[0]!.points.map(p => ({ name: String(p.x), value: p.y }));
+    // funnel/pyramid are excluded from SORTABLE_CHART_TYPES: ECharts' own
+    // `sort` below already always value-orders them for the narrowing shape.
+    if (pie && payload.sort) data.sort((a, b) => (payload.sort === 'asc' ? a.value - b.value : b.value - a.value));
     option.series = funnel
       ? [{ type: 'funnel', sort: type === 'pyramid' ? 'ascending' : 'descending', data, label: { color: text },
           left: '10%', right: '10%', top: 10, bottom: 25,
@@ -503,8 +514,13 @@ function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts
   if (type === 'waffle') {
     // Reuses pie's own data extraction: one value per named series (summed
     // across its points) or one value per simple-shape point.
-    const names = multi ? series.map(s => s.name) : series[0]!.points.map(p => String(p.x));
-    const values = multi ? series.map(s => s.points.reduce((sum, p) => sum + p.y, 0)) : series[0]!.points.map(p => p.y);
+    let names = multi ? series.map(s => s.name) : series[0]!.points.map(p => String(p.x));
+    let values = multi ? series.map(s => s.points.reduce((sum, p) => sum + p.y, 0)) : series[0]!.points.map(p => p.y);
+    if (payload.sort) {
+      const order = names.map((_, i) => i).sort((a, b) => (payload.sort === 'asc' ? values[a]! - values[b]! : values[b]! - values[a]!));
+      names = order.map(i => names[i]!);
+      values = order.map(i => values[i]!);
+    }
     const total = values.reduce((sum, v) => sum + v, 0);
     const cols = 10, squares = 100;
     const counts = allocateSquares(values, total, squares);
@@ -775,6 +791,38 @@ function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts
 const DENSITY_SCALE: Record<string, number> = { compact: 0.82, comfortable: 1, presentation: 1.25 };
 const BASE_FONT_SIZE = 12;
 /**
+ * Zoom/pan (scroll/pinch/drag, double-click to reset) and reference lines
+ * are both additive, additional to the already-built option, so they are
+ * applied as a post-process here rather than threaded through every one of
+ * the ~30 chart_type branches above — safe because neither touches a
+ * series' own data or color, unlike accessibility (see chartOptionImpl's
+ * own comment on why that one could *not* be a post-process).
+ */
+function applyInteractions(option: echarts.EChartsCoreOption, payload: ChatChartPresentation): echarts.EChartsCoreOption {
+  const type = payload.chart_type;
+  if (!(INTERACTIVE_CHART_TYPES as readonly string[]).includes(type)) return option;
+  const opt = option as Record<string, unknown>;
+  if (opt.xAxis && opt.yAxis && !Array.isArray(opt.xAxis) && !Array.isArray(opt.yAxis)) {
+    opt.dataZoom = [{ type: 'inside', xAxisIndex: 0 }, { type: 'inside', yAxisIndex: 0 }];
+  }
+  if (payload.reference_lines?.length && Array.isArray(opt.series) && opt.series.length) {
+    const valueAxisIsX = type === 'horizontal_bar';
+    const first = (opt.series as Record<string, unknown>[])[0]!;
+    first.markLine = {
+      silent: true, symbol: 'none',
+      lineStyle: { type: 'dashed', color: payload.theme === 'high_contrast' || payload.accessibility?.high_contrast ? '#000000' : '#64748b' },
+      label: { show: true, position: 'end' },
+      // A plain string per line, carried straight from the validated
+      // payload — not a function, so this stays data-only like every
+      // other label built in this file.
+      data: payload.reference_lines.map(r => (valueAxisIsX
+        ? { xAxis: r.value, label: { formatter: r.label ?? '' } }
+        : { yAxis: r.value, label: { formatter: r.label ?? '' } })),
+    };
+  }
+  return option;
+}
+/**
  * Density scales spacing and label size only — it never adds, removes or
  * reorders data. Applied as a post-process over the already-built option
  * (rather than threaded through every chart_type branch above) so every
@@ -804,7 +852,7 @@ function applyDensity(option: echarts.EChartsCoreOption, density: Density | unde
   return option;
 }
 export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
-  return applyDensity(chartOptionImpl(payload, dark), payload.density);
+  return applyDensity(applyInteractions(chartOptionImpl(payload, dark), payload), payload.density);
 }
 export function mountChatChart(container: HTMLElement, raw: unknown) {
   const payload = validateChatChart(raw);
@@ -815,5 +863,30 @@ export function mountChatChart(container: HTMLElement, raw: unknown) {
   draw();
   const resize = new ResizeObserver(() => chart.resize()); resize.observe(container);
   media.addEventListener('change', draw);
-  return { dispose() { resize.disconnect(); media.removeEventListener('change', draw); chart.dispose(); }, svg() { return chart.getDataURL({ type: 'svg' }); } };
+  return {
+    dispose() { resize.disconnect(); media.removeEventListener('change', draw); chart.dispose(); },
+    svg() { return chart.getDataURL({ type: 'svg' }); },
+    // Rasterized via an <img>/<canvas> round-trip rather than relying on
+    // ECharts' own getDataURL png support, which targets the canvas
+    // renderer — this chart is mounted with `renderer: 'svg'`, and the SVG
+    // it already produces has no external references (the contract
+    // forbids remote URLs), so this works in every browser without a
+    // second render pass.
+    png(): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || container.clientWidth;
+          canvas.height = img.naturalHeight || container.clientHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { reject(new Error('Canvas 2D context unavailable')); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => reject(new Error('Failed to rasterize chart SVG'));
+        img.src = chart.getDataURL({ type: 'svg' });
+      });
+    },
+  };
 }

@@ -584,3 +584,71 @@ describe('style, palette, accessibility and density', () => {
     expect(colorOf(forwardSeries,'Revenue')).not.toBe(colorOf(forwardSeries,'Cost'));
   });
 });
+
+describe('interactions: zoom/pan, reference lines and sort', () => {
+  it('rejects sort on a type not in SORTABLE_CHART_TYPES, and reference_lines on a type not in INTERACTIVE_CHART_TYPES', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'scatter',
+      series:[{name:'a',points:[{x:1,y:1}]}],sort:'asc'})).toBeNull();
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+      series:[{label:'A',value:1}],reference_lines:[{value:5}]})).toBeNull();
+    // Multi-series bar: sorting is ambiguous (sort by which series?), so rejected.
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+      series:[{name:'a',points:[{x:'X',y:1}]},{name:'b',points:[{x:'X',y:2}]}],sort:'asc'})).toBeNull();
+  });
+
+  it('rejects a malformed reference_lines entry', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'line',series:[{name:'a',points:[{x:'A',y:1}]}]};
+    expect(validateChatChart({...base,reference_lines:[{value:'five'}]})).toBeNull();
+    expect(validateChatChart({...base,reference_lines:[{value:5,extra:1}]})).toBeNull();
+    expect(validateChatChart({...base,reference_lines:[]})).toBeNull();
+    expect(validateChatChart({...base,reference_lines:[{value:5,label:'Target'}]})).not.toBeNull();
+  });
+
+  it('sorts pie slices by value without mutating the input', () => {
+    const payload={schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+      series:[{label:'small',value:1},{label:'big',value:9}],sort:'asc' as const};
+    const before=JSON.stringify(payload);
+    const chart=validateChatChart(payload)!;
+    const data=(chartOption(chart).series as any[])[0].data;
+    expect(data.map((d:any)=>d.name)).toEqual(['small','big']);
+    expect(JSON.stringify(payload)).toBe(before);
+  });
+
+  it('sorts waffle names/values together before allocating squares', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'waffle',
+      series:[{label:'small',value:10},{label:'big',value:90}],sort:'desc'});
+    const series=chartOption(chart!).series as any[];
+    expect(series[0].name).toBe('big');
+    expect(series[0].data.length).toBe(90);
+    expect(series[1].name).toBe('small');
+    expect(series[1].data.length).toBe(10);
+  });
+
+  it('sorts single-series bar categories by value, but leaves lollipop/bar input order alone when sort is absent', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+      series:[{label:'small',value:1},{label:'big',value:9}],sort:'desc'});
+    const option=chartOption(chart!) as any;
+    expect(option.xAxis.data).toEqual(['big','small']);
+    const unsorted=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+      series:[{label:'small',value:1},{label:'big',value:9}]});
+    expect((chartOption(unsorted!) as any).xAxis.data).toEqual(['small','big']);
+  });
+
+  it('adds inside dataZoom on both axes for interactive types, and omits it for non-interactive types', () => {
+    const line=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'line',
+      series:[{name:'a',points:[{x:'A',y:1}]}]})!) as any;
+    expect(line.dataZoom).toEqual([{type:'inside',xAxisIndex:0},{type:'inside',yAxisIndex:0}]);
+    const pie=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+      series:[{label:'A',value:1}]})!) as any;
+    expect(pie.dataZoom).toBeUndefined();
+  });
+
+  it('draws reference_lines as a markLine on the first series, against the value axis', () => {
+    const vertical=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'line',
+      series:[{name:'a',points:[{x:'A',y:1}]}],reference_lines:[{value:50,label:'Target'}]})!) as any;
+    expect(vertical.series[0].markLine.data).toEqual([{yAxis:50,label:{formatter:'Target'}}]);
+    const horizontal=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'horizontal_bar',
+      series:[{name:'a',points:[{x:'A',y:1}]}],reference_lines:[{value:50}]})!) as any;
+    expect(horizontal.series[0].markLine.data).toEqual([{xAxis:50,label:{formatter:''}}]);
+  });
+});
