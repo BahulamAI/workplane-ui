@@ -658,7 +658,7 @@ describe('interactions: zoom/pan, reference lines and sort', () => {
   it('adds inside dataZoom on both axes for interactive types, and omits it for non-interactive types', () => {
     const line=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'line',
       series:[{name:'a',points:[{x:'A',y:1}]}]})!) as any;
-    expect(line.dataZoom).toEqual([{type:'inside',xAxisIndex:0},{type:'inside',yAxisIndex:0}]);
+    expect(line.dataZoom).toEqual([{type:'inside',xAxisIndex:0,filterMode:'none'},{type:'inside',yAxisIndex:0,filterMode:'none'}]);
     const pie=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
       series:[{label:'A',value:1}]})!) as any;
     expect(pie.dataZoom).toBeUndefined();
@@ -671,5 +671,42 @@ describe('interactions: zoom/pan, reference lines and sort', () => {
     const horizontal=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'horizontal_bar',
       series:[{name:'a',points:[{x:'A',y:1}]}],reference_lines:[{value:50}]})!) as any;
     expect(horizontal.series[0].markLine.data).toEqual([{xAxis:50,label:{formatter:''}}]);
+  });
+});
+
+
+it('zoom preserves interval and stacked helper rows instead of filtering their raw values', () => {
+  const option = chartOption({schema_version:'bahulam_render_v1',type:'chart',chart_type:'range_area',series:[{name:'Band',points:[{x:'A',low:-5,high:3}]}]});
+  expect(option.dataZoom).toEqual([
+    {type:'inside',xAxisIndex:0,filterMode:'none'},
+    {type:'inside',yAxisIndex:0,filterMode:'none'},
+  ]);
+});
+
+describe('visual_style', () => {
+  it("rejects visual_style: 'outlined' for a chart_type outside OUTLINE_CHART_TYPES, but allows 'flat' everywhere", () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+      series:[{label:'A',value:1}],visual_style:'outlined'})).toBeNull();
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pie',
+      series:[{label:'A',value:1}],visual_style:'flat'})).not.toBeNull();
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+      series:[{label:'A',value:1}],visual_style:'outlined'})).not.toBeNull();
+  });
+
+  it("strips each series' fill to a transparent center plus a colored border, and zeroes area fill", () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'area',
+      series:[{name:'Revenue',points:[{x:'A',y:1}]}],visual_style:'outlined'});
+    const series=(chartOption(chart!).series as any[])[0];
+    expect(series.itemStyle.color).toBe('transparent');
+    expect(series.itemStyle.borderColor).toBeTruthy();
+    expect(series.itemStyle.borderWidth).toBe(2);
+    expect(series.areaStyle.opacity).toBe(0);
+  });
+
+  it("leaves the option unchanged for visual_style: 'flat' or when the field is absent", () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:5}]};
+    const absent=chartOption(validateChatChart(base)!);
+    const flat=chartOption(validateChatChart({...base,visual_style:'flat'})!);
+    expect(flat).toEqual(absent);
   });
 });

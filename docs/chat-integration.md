@@ -217,17 +217,32 @@ sibling is added, removed or reordered between renders, so "the Revenue
 line is blue" stays true rather than shifting when the agent happens to
 list series in a different order.
 
-The plan's broader visual-style system (flat/minimalism/skeuomorphism/
-glassmorphism/neumorphism/claymorphism/material/outlined/editorial/
-technical/hand-drawn/brutalist, twelve options in total) is intentionally
-not implemented here. Several of those — glass, neumorphism, skeuomorphism,
-claymorphism, hand-drawn — are exactly what the plan itself warns against:
-styles that risk creating misleading pseudo-3D marks or diminishing
-contrast. Applying any of them consistently would mean a transform reaching
-into the ~50 chart_type branches' heterogeneous series shapes, which is
-precisely the kind of change this test suite cannot verify, since it
-inspects the built option object, never real rendering. Revisit if there's
-a concrete need and a way to verify each style actually renders safely.
+Two of the plan's twelve visual styles are implemented: `visual_style:
+'flat'` (the default — every chart already renders this way) and
+`'outlined'`, which strips each series' own fill to a transparent center
+plus a colored border and zeroes any area fill. `'outlined'` is available
+only for `OUTLINE_CHART_TYPES` — the twelve types that share the one
+generic bar/line/area/scatter construction path, where fill is purely
+decorative. It is deliberately **not** offered for pie/donut/rose/funnel/
+pyramid/waffle (fill is the only thing distinguishing adjacent slices),
+heatmap/calendar_heatmap/correlation_matrix/treemap/sunburst (fill color
+*is* the data encoding — outlining would destroy the chart's meaning,
+exactly what the plan says a style must never do), or any type with its
+own helper/invisible sub-series (dumbbell, range_area, error_bar,
+waterfall, gantt, bullet, ...), since this generic transform was never
+verified against those shapes.
+
+The remaining ten styles (minimalism/skeuomorphism/glassmorphism/
+neumorphism/claymorphism/material/editorial/technical/hand-drawn/
+brutalist) are intentionally not implemented. Several of those — glass,
+neumorphism, skeuomorphism, claymorphism, hand-drawn — are exactly what
+the plan itself warns against: styles that risk creating misleading
+pseudo-3D marks or diminishing contrast. Applying any of them consistently
+would mean a transform reaching into the ~50 chart_type branches'
+heterogeneous series shapes, which is precisely the kind of change this
+test suite cannot verify, since it inspects the built option object, never
+real rendering. Revisit if there's a concrete need and a way to verify
+each style actually renders safely.
 
 ## Interactions
 
@@ -252,6 +267,9 @@ series'value?" has no unambiguous answer.
 the value axis for `INTERACTIVE_CHART_TYPES` — a target, threshold or
 baseline to compare the data against, attached as a `markLine` on the
 chart's first series.
+
+`visual_style: 'flat' | 'outlined'` is covered above, in "Style, palette,
+accessibility and density".
 
 `mountChatChart(...)` returns `svg()` (unchanged) and now `png()` —
 rasterized via an `<img>`/`<canvas>` round-trip from the SVG, async since

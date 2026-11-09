@@ -803,7 +803,7 @@ function applyInteractions(option: echarts.EChartsCoreOption, payload: ChatChart
   if (!(INTERACTIVE_CHART_TYPES as readonly string[]).includes(type)) return option;
   const opt = option as Record<string, unknown>;
   if (opt.xAxis && opt.yAxis && !Array.isArray(opt.xAxis) && !Array.isArray(opt.yAxis)) {
-    opt.dataZoom = [{ type: 'inside', xAxisIndex: 0 }, { type: 'inside', yAxisIndex: 0 }];
+    opt.dataZoom = [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }, { type: 'inside', yAxisIndex: 0, filterMode: 'none' }];
   }
   if (payload.reference_lines?.length && Array.isArray(opt.series) && opt.series.length) {
     const valueAxisIsX = type === 'horizontal_bar';
@@ -819,6 +819,33 @@ function applyInteractions(option: echarts.EChartsCoreOption, payload: ChatChart
         ? { xAxis: r.value, label: { formatter: r.label ?? '' } }
         : { yAxis: r.value, label: { formatter: r.label ?? '' } })),
     };
+  }
+  return option;
+}
+/**
+ * 'outlined' strips each series' own fill to a transparent center plus a
+ * colored border, and zeroes any area fill — safe and unambiguous only for
+ * OUTLINE_CHART_TYPES, where every series goes through the one generic
+ * bar/line/area/scatter construction path and fill is purely decorative,
+ * never the data encoding. Scoped there deliberately; see the const's own
+ * comment in contract.ts for exactly what this was never verified against.
+ */
+function applyVisualStyle(option: echarts.EChartsCoreOption, payload: ChatChartPresentation): echarts.EChartsCoreOption {
+  if (payload.visual_style !== 'outlined') return option;
+  const opt = option as Record<string, unknown>;
+  if (!Array.isArray(opt.series)) return option;
+  for (const s of opt.series as Record<string, unknown>[]) {
+    const itemStyle = s.itemStyle;
+    if (itemStyle && typeof itemStyle === 'object') {
+      const style = itemStyle as Record<string, unknown>;
+      if (typeof style.color === 'string') {
+        style.borderColor = style.color;
+        style.color = 'transparent';
+        style.borderWidth = 2;
+      }
+    }
+    const areaStyle = s.areaStyle;
+    if (areaStyle && typeof areaStyle === 'object') (areaStyle as Record<string, unknown>).opacity = 0;
   }
   return option;
 }
@@ -852,7 +879,7 @@ function applyDensity(option: echarts.EChartsCoreOption, density: Density | unde
   return option;
 }
 export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
-  return applyDensity(applyInteractions(chartOptionImpl(payload, dark), payload), payload.density);
+  return applyDensity(applyVisualStyle(applyInteractions(chartOptionImpl(payload, dark), payload), payload), payload.density);
 }
 export function mountChatChart(container: HTMLElement, raw: unknown) {
   const payload = validateChatChart(raw);
@@ -861,10 +888,13 @@ export function mountChatChart(container: HTMLElement, raw: unknown) {
   const chart = echarts.init(container, undefined, { renderer: 'svg' });
   const draw = () => chart.setOption(chartOption(payload, payload.appearance === 'dark' || (payload.appearance !== 'light' && media.matches)), { notMerge: true });
   draw();
+  const reset = () => chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+  container.addEventListener('dblclick', reset);
   const resize = new ResizeObserver(() => chart.resize()); resize.observe(container);
   media.addEventListener('change', draw);
   return {
-    dispose() { resize.disconnect(); media.removeEventListener('change', draw); chart.dispose(); },
+    reset,
+    dispose() { container.removeEventListener('dblclick', reset); resize.disconnect(); media.removeEventListener('change', draw); chart.dispose(); },
     svg() { return chart.getDataURL({ type: 'svg' }); },
     // Rasterized via an <img>/<canvas> round-trip rather than relying on
     // ECharts' own getDataURL png support, which targets the canvas

@@ -13,6 +13,23 @@ export const NETWORK_CHART_TYPES = ['sankey', 'graph'] as const;
 // Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
 // or {name, values} wrapper — there is only ever one measurement per name.
 export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
+// Visual style, scoped deliberately narrow: 'outlined' strips each series'
+// own fill to a transparent center plus a colored border (and zeroes any
+// area fill), which only has a safe, unambiguous meaning where fill is
+// purely decorative. It is NOT offered for: pie/donut/rose/funnel/pyramid/
+// waffle (fill is the only thing distinguishing adjacent slices/cells),
+// heatmap/calendar_heatmap/correlation_matrix/treemap/sunburst (fill color
+// *is* the data encoding — outlining would destroy the chart's meaning,
+// exactly what the plan warns a style must never do), and every type with
+// its own helper/invisible sub-series (dumbbell, range_area, error_bar,
+// waterfall, gantt, bullet, ...) this generic transform was never verified
+// against. The rest of the plan's twelve-option style system (glass,
+// neumorphism, skeuomorphism, claymorphism, hand-drawn, ...) remains
+// unimplemented for the reasons in chat-integration.md.
+export const VISUAL_STYLES = ['flat', 'outlined'] as const;
+export type VisualStyle = typeof VISUAL_STYLES[number];
+export const OUTLINE_CHART_TYPES = ['bar', 'horizontal_bar', 'stacked_bar', 'stacked_bar_100',
+  'line', 'area', 'step_line', 'stacked_area', 'stacked_area_100', 'scatter', 'scatter_trend', 'sparkline'] as const;
 // Types with exactly one cartesian x/y axis pair (not a multi-grid, polar,
 // calendar or hierarchy/network layout), where zoom/pan and a reference
 // line both make sense and render the same way: `reference_lines` always
@@ -97,7 +114,7 @@ export interface ChatChartPresentation {
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
   series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[] | IntervalItem[] | HierarchyNode[] | GraphSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
-  density?: Density; accessibility?: AccessibilityOptions;
+  density?: Density; accessibility?: AccessibilityOptions; visual_style?: VisualStyle;
   sort?: 'asc' | 'desc'; reference_lines?: ReferenceLine[];
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
@@ -181,6 +198,7 @@ export const chartToolSchema = {
     accessibility: { type: 'object', additionalProperties: false, properties: {
       high_contrast: { type: 'boolean' }, patterns: { type: 'boolean' }, reduced_motion: { type: 'boolean' },
     } },
+    visual_style: { type: 'string', enum: VISUAL_STYLES },
     sort: { type: 'string', enum: ['asc', 'desc'] },
     reference_lines: { type: 'array', maxItems: 10, items: { type: 'object', additionalProperties: false, required: ['value'], properties: {
       value: { type: 'number' }, label: text,
@@ -245,6 +263,9 @@ export const chartToolSchema = {
   }, {
     if: { properties: { chart_type: { not: { enum: INTERACTIVE_CHART_TYPES } } }, required: ['chart_type'] },
     then: { properties: { reference_lines: false } },
+  }, {
+    if: { properties: { chart_type: { not: { enum: OUTLINE_CHART_TYPES } }, visual_style: { const: 'outlined' } }, required: ['chart_type', 'visual_style'] },
+    then: { properties: { visual_style: false } },
   }],
 } as const;
 export const chartCatalog = {
@@ -389,6 +410,7 @@ export const chartCatalog = {
     reference_lines: "Optional top-level reference_lines: [{value, label?}], up to 10, for chart types in INTERACTIVE_CHART_TYPES. Draws a dashed line across the value axis — a target or baseline to compare against, not data.",
     sort: "Optional top-level sort: 'asc'|'desc', for chart types in SORTABLE_CHART_TYPES. Reorders by value; omit it and the input order is kept exactly as given.",
     export: 'mountChatChart(...) returns svg() and png() for exporting the rendered chart; both are host-side JS calls, not part of the JSON payload.',
+    visual_style: "Optional top-level visual_style: 'flat' (default) | 'outlined', for chart types in OUTLINE_CHART_TYPES only. 'outlined' strips each series' fill to a transparent center plus a colored border; unavailable for types where fill is the data encoding itself (pie/donut/heatmap/treemap/...) or that have their own helper sub-series this transform isn't verified against.",
     drill_down_and_cross_filtering: 'Not available from this portable, read-only contract — it requires a host-side data query or document commit, which an agent cannot embed as code. The Generative BI document surface has its own selection/query-bound interaction model for this; the chat contract does not share it.',
   },
 };
@@ -414,9 +436,14 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
       if (a[key] !== undefined && typeof a[key] !== 'boolean') return null;
     }
   }
-  // sort and reference_lines are each meaningful only for a bounded set of
-  // chart types (see the two consts' own comments); reject them elsewhere
-  // rather than silently ignoring a field the caller thought would apply.
+  // visual_style, sort and reference_lines are each meaningful only for a
+  // bounded set of chart types (see the consts' own comments); reject them
+  // elsewhere rather than silently ignoring a field the caller thought
+  // would apply. 'flat' needs no check: every type renders that way already.
+  if (p.visual_style !== undefined) {
+    if (!(VISUAL_STYLES as readonly string[]).includes(p.visual_style as string)) return null;
+    if (p.visual_style === 'outlined' && !(OUTLINE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) return null;
+  }
   if (p.sort !== undefined) {
     if (!['asc', 'desc'].includes(p.sort as string)) return null;
     if (!(SORTABLE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) return null;
