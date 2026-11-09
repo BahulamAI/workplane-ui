@@ -13,34 +13,76 @@
         "bar",
         "horizontal_bar"
       ],
-      "purpose": "Compare categories; use horizontal bars for long labels."
+      "purpose": "Compare categories; use horizontal bars for long labels.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "lollipop"
+      ],
+      "purpose": "Compare categories with a lighter visual weight than full bars; single series only.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "dumbbell"
+      ],
+      "purpose": "Show the distance between exactly two measurements per category, e.g. before vs after or target vs actual; needs exactly two named series.",
+      "status": "supported"
     },
     {
       "types": [
         "line",
-        "area"
+        "area",
+        "step_line"
       ],
-      "purpose": "Show ordered trends; use area to emphasize magnitude."
+      "purpose": "Show ordered trends; use area to emphasize magnitude, step for values that change in discrete jumps rather than continuously.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "range_area"
+      ],
+      "purpose": "Show an uncertainty band or min/max range around a trend; each series needs a low and high value per x, not a single y.",
+      "status": "supported"
     },
     {
       "types": [
         "stacked_bar",
         "stacked_area"
       ],
-      "purpose": "Show how multiple nonnegative series contribute to a total."
+      "purpose": "Show how multiple nonnegative series contribute to a total.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "stacked_bar_100",
+        "stacked_area_100"
+      ],
+      "purpose": "Show what share each nonnegative series contributes to a total, normalized to 100% so proportions are comparable across categories of different absolute size.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "sparkline"
+      ],
+      "purpose": "Show a trend at a glance with no axes or legend; for inline/compact scanning, not precise reading.",
+      "status": "supported"
     },
     {
       "types": [
         "pie",
         "donut"
       ],
-      "purpose": "Show nonnegative parts of a whole, preferably 2–6 categories."
+      "purpose": "Show nonnegative parts of a whole, preferably 2–6 categories.",
+      "status": "supported"
     },
     {
       "types": [
         "scatter"
       ],
-      "purpose": "Show relationships between two numeric measurements; use numeric x/y points."
+      "purpose": "Show relationships between two numeric measurements; use numeric x/y points.",
+      "status": "supported"
     }
   ],
   "limits": {
@@ -62,10 +104,17 @@
         "enum": [
           "bar",
           "horizontal_bar",
+          "lollipop",
+          "dumbbell",
           "stacked_bar",
+          "stacked_bar_100",
           "line",
           "area",
+          "step_line",
+          "range_area",
           "stacked_area",
+          "stacked_area_100",
+          "sparkline",
           "pie",
           "donut",
           "scatter"
@@ -148,6 +197,53 @@
                   }
                 }
               }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "points"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "points": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "x",
+                      "low",
+                      "high"
+                    ],
+                    "properties": {
+                      "x": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      },
+                      "low": {
+                        "type": "number"
+                      },
+                      "high": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
             }
           ]
         }
@@ -177,6 +273,329 @@
           "dark"
         ]
       }
-    }
+    },
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "enum": [
+                "stacked_bar_100",
+                "stacked_area_100"
+              ]
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "items": {
+                "properties": {
+                  "value": {
+                    "minimum": 0
+                  },
+                  "points": {
+                    "items": {
+                      "properties": {
+                        "y": {
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "const": "range_area"
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "maxItems": 12,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "points"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "points": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "x",
+                        "low",
+                        "high"
+                      ],
+                      "properties": {
+                        "x": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            {
+                              "type": "number"
+                            }
+                          ]
+                        },
+                        "low": {
+                          "type": "number"
+                        },
+                        "high": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "series": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "points"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "points": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "properties": {
+                            "x": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "const": "dumbbell"
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "points"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "points": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "properties": {
+                        "x": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            {
+                              "type": "number"
+                            }
+                          ]
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "const": "lollipop"
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                {
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "points"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "points": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "properties": {
+                            "x": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
   }
 }
