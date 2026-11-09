@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
+import { chartCatalog, chartToolSchema, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
 import { chartOption } from '../../packages/workplane-ui/src/chat/engine';
 // Most types accept the plain {label, value} shape; a few need a shape that
 // shows what makes them distinct (range_area/error_bar's bounds, dumbbell's
@@ -29,6 +29,27 @@ describe('portable chat chart contract', () => {
   });
   it('advertises exactly the supported chart types', () => {
     expect(chartCatalog.presentations.flatMap(p=>p.types).sort()).toEqual([...CHART_TYPES].sort());
+  });
+  it('gives every presentation a working example and an unsuitable_for note', () => {
+    for (const p of chartCatalog.presentations) {
+      expect(p.example, p.types.join(',')).toBeDefined();
+      expect(p.unsuitable_for?.length, p.types.join(',')).toBeGreaterThan(10);
+      const chart = validateChatChart({ schema_version: 'bahulam_render_v1', type: 'chart', ...p.example });
+      expect(chart, `${p.types.join(',')} example: ${JSON.stringify(p.example)}`).not.toBeNull();
+      // The example's own chart_type must be one of the types it documents.
+      expect(p.types).toContain(p.example?.chart_type);
+    }
+  });
+  it('keeps the catalog affordable to send to an agent: a per-entry cap, and a total ceiling with room to grow', () => {
+    // Mirrors the document catalog's own size-cap test (tests/contract/catalog.test.ts):
+    // a per-entry cap is what actually stops bloat, since a flat total only
+    // fails once, on whoever happens to add the last entry.
+    const oversized = chartCatalog.presentations
+      .map(p => [p.types.join(','), JSON.stringify(p).length] as const)
+      .filter(([, bytes]) => bytes > 900);
+    expect(oversized, `entries over 900 bytes: ${JSON.stringify(oversized)}`).toEqual([]);
+    const total = JSON.stringify({ ...chartCatalog, tool_schema: chartToolSchema }).length;
+    expect(total).toBeLessThan(45_000);
   });
   it('rejects bad shapes and unknown contract versions', () => {
     const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',series:[{label:'A',value:2}]};

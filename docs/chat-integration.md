@@ -16,6 +16,25 @@ Structural validation rejects malformed, nonfinite, oversized, or unsupported da
 The same persisted chart payload supplies web and mobile; it is not regenerated
 from prose on reload.
 
+Per the plan's "for supported types it provides exact schema, examples,
+analytical purpose, unsuitable uses, unit/scale requirements, limits,
+interactions and platform support," every entry in `chartCatalog.presentations`
+carries, beyond `types`/`purpose`/`status`: an `example` (a minimal payload for
+that entry, each one checked by a test to actually pass `validateChatChart`,
+so the catalog can never advertise an example that doesn't work) and
+`unsuitable_for` (one sentence on when *not* to reach for it — the plan's
+"unsuitable uses"). Interactions are documented once, globally, in the new
+top-level `interactions` key (see Interactions below) rather than repeated
+per entry, since they apply via the shared `INTERACTIVE_CHART_TYPES`/
+`SORTABLE_CHART_TYPES` allowlists rather than varying per type. `deferred_types`
+and `separate_renderer_families` name what's explicitly *not* available and
+why, satisfying the plan's "must not suggest planned entries as executable
+tools" — they're metadata, not enum members an agent could call. The whole
+catalog (presentations + interactions + tool_schema) is kept under a 45KB
+ceiling, with a per-entry cap of 900 bytes so no single addition can blow the
+budget unnoticed — mirroring the equivalent size-cap test already enforced
+on the document renderer catalog.
+
 Initial types: bar, horizontal_bar, lollipop, dumbbell, stacked_bar,
 stacked_bar_100, line, area, step_line, range_area, error_bar, stacked_area,
 stacked_area_100, sparkline, pie, donut, rose, pareto, waterfall, funnel,
