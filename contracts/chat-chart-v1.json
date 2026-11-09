@@ -1,0 +1,182 @@
+{
+  "contract_version": "workplane.chat-chart/1",
+  "renderer": "workplane.echarts.chat",
+  "themes": [
+    "default",
+    "minimal",
+    "presentation",
+    "high_contrast"
+  ],
+  "presentations": [
+    {
+      "types": [
+        "bar",
+        "horizontal_bar"
+      ],
+      "purpose": "Compare categories; use horizontal bars for long labels."
+    },
+    {
+      "types": [
+        "line",
+        "area"
+      ],
+      "purpose": "Show ordered trends; use area to emphasize magnitude."
+    },
+    {
+      "types": [
+        "stacked_bar",
+        "stacked_area"
+      ],
+      "purpose": "Show how multiple nonnegative series contribute to a total."
+    },
+    {
+      "types": [
+        "pie",
+        "donut"
+      ],
+      "purpose": "Show nonnegative parts of a whole, preferably 2–6 categories."
+    },
+    {
+      "types": [
+        "scatter"
+      ],
+      "purpose": "Show relationships between two numeric measurements; use numeric x/y points."
+    }
+  ],
+  "limits": {
+    "max_points": 2000,
+    "max_series": 12,
+    "max_bytes": 64000
+  },
+  "instructions": "Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.",
+  "tool_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "chart_type",
+      "series"
+    ],
+    "properties": {
+      "chart_type": {
+        "type": "string",
+        "enum": [
+          "bar",
+          "horizontal_bar",
+          "stacked_bar",
+          "line",
+          "area",
+          "stacked_area",
+          "pie",
+          "donut",
+          "scatter"
+        ]
+      },
+      "title": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "x_label": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "y_label": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "series": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 500,
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "value"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "value": {
+                  "type": "number"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "points"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "points": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "properties": {
+                      "x": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      },
+                      "y": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "observations": {
+        "type": "array",
+        "maxItems": 6,
+        "items": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      },
+      "theme": {
+        "type": "string",
+        "enum": [
+          "default",
+          "minimal",
+          "presentation",
+          "high_contrast"
+        ]
+      },
+      "appearance": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "light",
+          "dark"
+        ]
+      }
+    }
+  }
+}

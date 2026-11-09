@@ -1,0 +1,316 @@
+/*
+ * Default theme. Every value is a CSS custom property, so a host restyles the
+ * shell by redefining tokens rather than forking it. Nothing here carries a
+ * product name, logo, or vendor colour.
+ */
+[data-workplane] {
+  --wp-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --wp-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --wp-bg: #ffffff;
+  --wp-surface: #f7f8fa;
+  --wp-border: #d8dce3;
+  --wp-text: #16191d;
+  --wp-text-muted: #5b6270;
+  --wp-accent: #1f5fd6;
+  --wp-warning-bg: #fff6e0;
+  --wp-warning-text: #6b4a00;
+  --wp-error-bg: #fdeced;
+  --wp-error-text: #8c1c24;
+  --wp-radius: 8px;
+  --wp-gap: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-workplane] {
+    --wp-bg: #14171c;
+    --wp-surface: #1c2027;
+    --wp-border: #333a45;
+    --wp-text: #eef1f5;
+    --wp-text-muted: #9aa3b2;
+    --wp-accent: #7aa7ff;
+    --wp-warning-bg: #3a2f10;
+    --wp-warning-text: #f0d79a;
+    --wp-error-bg: #3c1b1e;
+    --wp-error-text: #f3b0b5;
+  }
+}
+
+[data-workplane="root"] {
+  font-family: var(--wp-font);
+  color: var(--wp-text);
+  background: var(--wp-bg);
+  padding: var(--wp-gap);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wp-gap);
+}
+
+[data-workplane="header"] { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+[data-workplane="title"] { font-size: 1.4rem; margin: 0; }
+
+[data-workplane="scene-nav"] { position: sticky; top: 0; z-index: 2; background: var(--wp-bg); padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="scene-nav"] ol { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+[data-workplane="scene-nav"] a { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--wp-border); color: var(--wp-text); text-decoration: none; font-size: 0.85rem; }
+[data-workplane="scene-nav"] a[aria-current="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+[data-workplane="scene-nav-index"] { color: var(--wp-text-muted); font-variant-numeric: tabular-nums; }
+
+[data-workplane="scenes"] { display: flex; flex-direction: column; gap: 32px; }
+[data-workplane="scene"] { scroll-margin-top: 64px; }
+[data-workplane="scene-heading"] { font-size: 1.1rem; margin: 0 0 12px; }
+
+[data-workplane="scene-blocks"] { display: grid; gap: var(--wp-gap); }
+[data-layout="grid"] [data-workplane="scene-blocks"] { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+
+[data-workplane="block"] { border: 1px solid var(--wp-border); border-radius: var(--wp-radius); background: var(--wp-surface); padding: 14px; min-width: 0; }
+[data-workplane="block-title"] { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--wp-text-muted); margin: 0 0 10px; font-weight: 600; }
+
+[data-workplane="metric"] { display: flex; flex-direction: column; gap: 4px; }
+[data-workplane="metric-value"] { font-size: 1.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+[data-workplane="metric-meta"], [data-workplane="column-meta"] { font-size: 0.72rem; color: var(--wp-text-muted); display: block; font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+[data-workplane="fact"] { margin: 0; line-height: 1.5; }
+[data-workplane="generated-badge"] { font-size: 0.7rem; color: var(--wp-warning-text); background: var(--wp-warning-bg); padding: 2px 6px; border-radius: 4px; }
+
+[data-workplane="stale-badge"], [data-workplane="draft-badge"] { font-size: 0.7rem; color: var(--wp-warning-text); background: var(--wp-warning-bg); padding: 2px 6px; border-radius: 4px; }
+
+[data-workplane="form"] { display: flex; flex-direction: column; gap: 12px; }
+[data-workplane="field"] { display: flex; flex-direction: column; gap: 4px; }
+[data-workplane="field"] label { font-size: 0.8rem; color: var(--wp-text-muted); }
+[data-workplane="field"] input, [data-workplane="field"] select { padding: 7px 9px; border: 1px solid var(--wp-border); border-radius: 6px; background: var(--wp-bg); color: var(--wp-text); font: inherit; }
+[data-workplane="field"][data-dirty="true"] input, [data-workplane="field"][data-dirty="true"] select { border-color: var(--wp-warning-text); }
+
+button { font: inherit; padding: 7px 12px; border-radius: 6px; border: 1px solid var(--wp-border); background: var(--wp-bg); color: var(--wp-text); cursor: pointer; }
+button[data-workplane="form-submit"] { background: var(--wp-accent); border-color: var(--wp-accent); color: #fff; align-self: flex-start; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+[data-workplane="conflict"] { background: var(--wp-warning-bg); color: var(--wp-warning-text); padding: 10px; border-radius: 6px; font-size: 0.85rem; }
+[data-workplane="conflict-row"] { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+[data-workplane="form-error"] { background: var(--wp-error-bg); color: var(--wp-error-text); padding: 10px; border-radius: 6px; margin: 0; font-size: 0.85rem; }
+
+[data-workplane="table-scroll"] { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+[data-workplane="table"] table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+[data-workplane="table"] caption { text-align: left; color: var(--wp-text-muted); font-size: 0.75rem; padding-bottom: 6px; }
+[data-workplane="table"] th, [data-workplane="table"] td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="table"] th { position: sticky; top: 0; background: var(--wp-surface); }
+[data-workplane="table"] [data-numeric="true"] { text-align: right; font-variant-numeric: tabular-nums; }
+[data-workplane="table-pager"] { display: flex; align-items: center; gap: 10px; padding-top: 8px; font-size: 0.8rem; color: var(--wp-text-muted); }
+
+[data-workplane="block-fallback"] { background: var(--wp-warning-bg); color: var(--wp-warning-text); padding: 10px; border-radius: 6px; font-size: 0.85rem; }
+[data-workplane="block-fallback"] p { margin: 0 0 4px; }
+[data-workplane="fallback-detail"] { font-size: 0.75rem; opacity: 0.85; }
+[data-workplane="block-fallback"] code { font-family: var(--wp-font-mono); }
+
+[data-workplane="unsupported-mode"] { background: var(--wp-warning-bg); color: var(--wp-warning-text); padding: 8px 10px; border-radius: 6px; font-size: 0.8rem; margin: 0; }
+[data-workplane="empty"] { color: var(--wp-text-muted); }
+
+:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+
+/* Depth travel, parallax, and scroll-linked animation are removed under a
+   reduced-motion preference; navigation itself stays fully functional. */
+@media (prefers-reduced-motion: reduce) {
+  [data-workplane] *, [data-workplane] *::before, [data-workplane] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- Feed presentation ----------------------------------------------------
+ *
+ * Navigation is native scroll-snap. The presenter observes the result instead
+ * of handling wheel or touch events, so nothing here may disable scrolling on
+ * a child: a table, a chart, or a 3D canvas has to keep its own gesture.
+ */
+[data-workplane="feed-rail"] { position: sticky; top: 0; z-index: 2; background: var(--wp-bg); padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="feed-rail"] ol { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; overflow-x: auto; }
+[data-workplane="feed-rail"] a { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--wp-border); color: var(--wp-text); text-decoration: none; font-size: 0.85rem; white-space: nowrap; }
+[data-workplane="feed-rail"] a[aria-current="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+[data-workplane="feed-rail-index"] { color: var(--wp-text-muted); font-variant-numeric: tabular-nums; }
+
+[data-workplane="feed-scroller"] {
+  display: flex;
+  /* Contain the overscroll so swiping past the last scene does not trigger the
+     browser's own back gesture. */
+  overscroll-behavior: contain;
+  scroll-snap-type: x mandatory;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* A viewport-relative height rather than an aspect ratio: section 5.4.2
+     forbids forcing every scene into a portrait video shape, so a chart or a
+     form keeps its natural proportions. */
+  height: min(78vh, 900px);
+}
+[data-workplane="feed-scroller"][data-axis="vertical"] {
+  flex-direction: column;
+  scroll-snap-type: y mandatory;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+[data-workplane="feed-scroller"]:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+
+[data-workplane="feed-scene"] {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--wp-gap);
+  box-sizing: border-box;
+}
+/* The scene's own scroll container. A tall table scrolls here and the feed
+   stays where it is. */
+[data-workplane="feed-scene"] [data-workplane="scene-blocks"] {
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+[data-workplane="feed-placeholder"] {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--wp-border);
+  border-radius: var(--wp-radius);
+  color: var(--wp-text-muted);
+  background: var(--wp-surface);
+}
+
+[data-workplane="feed-controls"] { display: flex; gap: 8px; align-items: center; padding: 8px 0; flex-wrap: wrap; }
+[data-workplane="feed-position"] { color: var(--wp-text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; margin-inline-end: auto; }
+[data-workplane="feed-exit"] { margin-inline-start: auto; }
+
+/* Honour the setting rather than animating anyway: section 5.4 requires every
+   navigation to remain available through a flat transition. */
+[data-workplane="feed-scroller"][data-reduced-motion="true"] { scroll-behavior: auto; }
+@media (prefers-reduced-motion: reduce) {
+  [data-workplane="feed-scroller"] { scroll-behavior: auto; }
+}
+
+/* --- 3D adapter ----------------------------------------------------------- */
+[data-workplane="three"] { margin: 0; }
+[data-workplane="three-canvas"] { position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--wp-surface); border: 1px solid var(--wp-border); border-radius: var(--wp-radius); overflow: hidden; }
+[data-workplane="three-canvas"]:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+[data-workplane="three-poster"] { width: 100%; height: 100%; object-fit: contain; display: block; }
+[data-workplane="three-unavailable"] { display: grid; place-items: center; height: 100%; padding: var(--wp-gap); text-align: center; color: var(--wp-text-muted); }
+[data-workplane="three-hint"] { color: var(--wp-text-muted); font-size: 0.8rem; margin: 4px 0 0; }
+
+/* --- History navigation (section 5.4.6) -----------------------------------
+ *
+ * The banner is deliberately loud. A historical document looks exactly like a
+ * live one, and a reader who forgets which they are looking at reads stale
+ * figures as current — that is the failure this styling exists to prevent.
+ */
+[data-workplane="history-banner"] {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 12px; margin-block-end: var(--wp-gap);
+  background: var(--wp-warning-bg); color: var(--wp-warning-text);
+  border: 1px solid currentColor; border-radius: var(--wp-radius);
+}
+[data-workplane="history-banner-text"] { margin: 0; flex: 1 1 auto; min-width: 12rem; }
+[data-workplane="history-banner-actions"] { display: flex; gap: 8px; flex-wrap: wrap; }
+[data-workplane="history-restore-confirm"] { flex: 1 1 100%; border-top: 1px solid currentColor; padding-top: 8px; }
+[data-workplane="history-restore-confirm"] ul { margin: 0 0 8px; padding-inline-start: 1.2em; }
+[data-workplane="history-restore-error"] { color: var(--wp-error-text); background: var(--wp-error-bg); padding: 6px 8px; border-radius: var(--wp-radius); }
+
+[data-workplane="history-domain"] { display: flex; gap: 4px; margin-block-end: 8px; }
+[data-workplane="history-domain"] [role="tab"] { padding: 4px 12px; border: 1px solid var(--wp-border); background: var(--wp-bg); color: var(--wp-text); border-radius: 999px; }
+[data-workplane="history-domain"] [role="tab"][aria-selected="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+
+[data-workplane="history-entries"] { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+[data-workplane="history-entries"] > li > button {
+  display: grid; grid-template-columns: 4rem 1fr auto; gap: 8px; align-items: baseline;
+  width: 100%; text-align: start; padding: 6px 8px; background: none;
+  border: 1px solid transparent; border-radius: var(--wp-radius); color: var(--wp-text); font: inherit;
+}
+[data-workplane="history-entries"] > li > button:hover { background: var(--wp-surface); }
+[data-workplane="history-entries"] > li > button[aria-current="true"] { border-color: var(--wp-accent); }
+[data-workplane="history-revision"] { font-variant-numeric: tabular-nums; color: var(--wp-text-muted); }
+[data-workplane="history-operations"] { grid-column: 1 / -1; color: var(--wp-text-muted); font-size: 0.8rem; font-family: var(--wp-font-mono); }
+[data-workplane="history-entries"] time { color: var(--wp-text-muted); font-size: 0.8rem; }
+[data-workplane="history-truncated"], [data-workplane="history-unavailable"] { color: var(--wp-text-muted); font-size: 0.85rem; }
+[data-workplane="history-failure"] { color: var(--wp-error-text); background: var(--wp-error-bg); padding: 8px; border-radius: var(--wp-radius); }
+
+/* --- Stack presentation (section 5.4.4) -----------------------------------
+ *
+ * Depth is CSS perspective on DOM wrappers. No 3D engine takes part in the
+ * navigation; a scene's own 3D content lives inside its block adapter.
+ */
+[data-workplane="stack-rail"] { padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="stack-position"] { margin: 0 0 6px; color: var(--wp-text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+[data-workplane="stack-rail"] ol { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; overflow-x: auto; }
+[data-workplane="stack-rail"] a { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--wp-border); color: var(--wp-text); text-decoration: none; font-size: 0.85rem; white-space: nowrap; }
+[data-workplane="stack-rail"] a[aria-current="true"] { border-color: var(--wp-accent); color: var(--wp-accent); }
+[data-workplane="stack-rail-index"] { color: var(--wp-text-muted); font-variant-numeric: tabular-nums; }
+
+[data-workplane="stack"] {
+  position: relative;
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+  /* Room for the receding cards to show above the active scene. */
+  padding: 56px var(--wp-gap) var(--wp-gap);
+  min-height: min(70vh, 820px);
+  /* The wheel handler calls preventDefault only once a gesture crosses the
+     threshold, so the browser must not have already committed to scrolling. */
+  overscroll-behavior: contain;
+}
+[data-workplane="stack"]:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+
+[data-workplane="stack-layer"] {
+  --wp-stack-depth: 0;
+  position: absolute;
+  inset: 56px var(--wp-gap) auto;
+  background: var(--wp-bg);
+  border: 1px solid var(--wp-border);
+  border-radius: var(--wp-radius);
+  padding: var(--wp-gap);
+  box-sizing: border-box;
+  transform-origin: 50% 0%;
+  transform:
+    translate3d(0, calc(var(--wp-stack-depth) * -18px), calc(var(--wp-stack-depth) * -120px))
+    scale(calc(1 - var(--wp-stack-depth) * 0.04));
+  /* Deeper cards sit further back in paint order as well as in space. */
+  z-index: calc(100 - var(--wp-stack-depth));
+  transition: transform 220ms ease, opacity 220ms ease;
+  opacity: calc(1 - var(--wp-stack-depth) * 0.18);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
+  max-height: calc(100% - 56px - var(--wp-gap));
+  overflow: hidden;
+}
+[data-workplane="stack-layer"][data-active] {
+  position: relative;
+  inset: auto;
+  opacity: 1;
+  overflow: auto;
+  cursor: auto;
+}
+/* A background card is clickable as a whole, to bring it forward. */
+[data-workplane="stack-layer"]:not([data-active]) { cursor: pointer; }
+
+/* The stack continues beyond the deepest mounted card. */
+[data-workplane="stack-more"] {
+  position: absolute;
+  inset: 8px calc(var(--wp-gap) + 28px) auto;
+  height: 10px;
+  border: 1px solid var(--wp-border);
+  border-bottom: none;
+  border-radius: var(--wp-radius) var(--wp-radius) 0 0;
+  opacity: 0.4;
+  z-index: 90;
+}
+
+[data-workplane="block-preview"] { padding: 8px 0; border-bottom: 1px solid var(--wp-border); }
+[data-workplane="block-preview"]:last-child { border-bottom: none; }
+[data-workplane="block-preview-title"] { margin: 0; font-weight: 600; font-size: 0.9rem; }
+[data-workplane="block-preview-text"] { margin: 2px 0 0; color: var(--wp-text-muted); font-size: 0.85rem; }
+
+[data-workplane="stack-controls"] { display: flex; gap: 8px; align-items: center; padding: 8px 0; flex-wrap: wrap; }
+[data-workplane="stack-exit"] { margin-inline-start: auto; }
+
+/* A flat transition keeps every navigation available without motion — 5.4. */
+[data-workplane="stack"][data-reduced-motion="true"] [data-workplane="stack-layer"] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  [data-workplane="stack-layer"] { transition: none; }
+}

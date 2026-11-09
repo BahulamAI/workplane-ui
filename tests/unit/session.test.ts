@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SessionStore } from "@bahulam/workplane-core";
+import { SessionStore } from "@bahulam/workplane-ui";
 
 describe("AC-03 — a user draft while an agent edits", () => {
   it("survives an unrelated agent change and still submits cleanly", () => {
@@ -63,6 +63,7 @@ describe("AC-14 — switching presentation mode", () => {
     expect(view).not.toHaveProperty("revision");
     expect(Object.keys(view).sort()).toEqual([
       "activeSceneId",
+      "feedAxis",
       "focusedBlockId",
       "followNewScenes",
       "historyRevision",

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@bahulam/workplane-react/styles.css";
+import "@bahulam/workplane-ui/styles.css";
 import "./app.css";
 import { App } from "./app.js";
 
