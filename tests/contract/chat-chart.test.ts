@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { chartCatalog, CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
+import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
 import { chartOption } from '../../packages/workplane-ui/src/chat/engine';
 // Most types accept the plain {label, value} shape; a few need a shape that
-// shows what makes them distinct (range_area's bounds, dumbbell's exactly-two
-// series) to even validate.
+// shows what makes them distinct (range_area/error_bar's bounds, dumbbell's
+// exactly-two series, the sample types' raw values) to even validate.
 const fixtureFor = (chart_type: string) =>
-  chart_type === 'range_area' ? [{name:'one',points:[{x:'A',low:1,high:5}]}]
+  (chart_type === 'range_area' || chart_type === 'error_bar') ? [{name:'one',points:[{x:'A',low:1,high:5}]}]
   : chart_type === 'dumbbell' ? [{name:'before',points:[{x:'A',y:1}]},{name:'after',points:[{x:'A',y:9}]}]
+  : (SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'one',values:[1,2,2,3,5,8]}]
   : [{label:'A',value:5},{label:'B',value:9}];
 describe('portable chat chart contract', () => {
   for (const chart_type of CHART_TYPES) it(`renders ${chart_type} as a supported ECharts option`, () => {
@@ -154,6 +155,80 @@ describe('portable chat chart contract', () => {
     // Squares tile the 10-column grid with no gaps and no overlap.
     const allCells=series.flatMap(s=>s.data.map((c:number[])=>c.join(',')));
     expect(new Set(allCells).size).toBe(100);
+  });
+  it('rejects an error_bar value outside its own low/high and draws a whisker plus a centered dot', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'error_bar'};
+    expect(validateChatChart({...base,series:[{name:'A',points:[{x:'X',low:2,high:10,value:15}]}]})).toBeNull();
+    const explicit=validateChatChart({...base,series:[{name:'A',points:[{x:'X',low:2,high:10,value:3}]}]});
+    const s1=chartOption(explicit!).series as any[];
+    expect(s1[0].data).toEqual([2]); // whisker base = low
+    expect(s1[1].data).toEqual([8]); // whisker span = high - low
+    expect(s1[2].data).toEqual([3]); // the explicit value, not the midpoint
+    const implicit=validateChatChart({...base,series:[{name:'A',points:[{x:'X',low:2,high:10}]}]});
+    const s2=chartOption(implicit!).series as any[];
+    expect(s2[2].data).toEqual([6]); // defaults to the midpoint when no value is given
+  });
+  it('requires histogram to be a single sample and bins it deterministically', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'histogram',
+      series:[{name:'a',values:[1]},{name:'b',values:[2]}]})).toBeNull();
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'histogram',
+      series:[{name:'sample',values:[1,1,2,2,2,3]}]});
+    const option=chartOption(chart!);
+    const counts=(option.series as any[])[0].data;
+    expect(counts.length).toBe(10);
+    expect(counts.reduce((a:number,b:number)=>a+b,0)).toBe(6);
+    expect(counts[0]).toBe(2); // the two 1s
+    expect(counts[5]).toBe(3); // the three 2s
+    expect(counts[9]).toBe(1); // the one 3 (clamped into the last bin)
+    expect((option.xAxis as any).data[0]).toBe('1–1.2');
+  });
+  it('computes a box_plot five-number summary per named sample with linear-interpolation quantiles', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'box_plot',series:[
+      {name:'g',values:[1,2,3,4,5]},{name:'h',values:[10,20]}]});
+    const option=chartOption(chart!);
+    expect((option.xAxis as any).data).toEqual(['g','h']);
+    expect((option.series as any[])[0].type).toBe('boxplot');
+    expect((option.series as any[])[0].data).toEqual([[1,2,3,4,5],[10,12.5,15,17.5,20]]);
+  });
+  it('evaluates a density curve on a shared, padded grid without mutating the input', () => {
+    const payload={schema_version:'bahulam_render_v1',type:'chart',chart_type:'density',series:[{name:'a',values:[1,2,3,4,5]}]};
+    const before=JSON.stringify(payload);
+    const chart=validateChatChart(payload)!;
+    const option=chartOption(chart);
+    const series=(option.series as any[])[0];
+    expect(series.type).toBe('line');
+    expect(series.data).toHaveLength(60);
+    expect(series.data.every(([, y]:[number,number])=>y>=0)).toBe(true);
+    expect(JSON.stringify(payload)).toBe(before);
+  });
+  it('builds an exact ECDF step curve from 0 to 1 without reordering the input', () => {
+    const payload={schema_version:'bahulam_render_v1',type:'chart',chart_type:'ecdf',series:[{name:'a',values:[3,1,2]}]};
+    const before=JSON.stringify(payload);
+    const chart=validateChatChart(payload)!;
+    const option=chartOption(chart);
+    const series=(option.series as any[])[0];
+    expect(series.step).toBe('start');
+    expect(series.data).toEqual([[1,1/3],[2,2/3],[3,1]]);
+    expect(JSON.stringify(payload)).toBe(before);
+  });
+  it('draws strip_plot points with no jitter, one lane per named sample', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'strip_plot',series:[
+      {name:'A',values:[5,7]},{name:'B',values:[2]}]});
+    const option=chartOption(chart!);
+    const series=option.series as any[];
+    expect(series[0].data).toEqual([[0,5],[0,7]]);
+    expect(series[1].data).toEqual([[1,2]]);
+  });
+  it('spreads beeswarm points symmetrically around the lane center for colliding values', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'beeswarm',series:[
+      {name:'A',values:[1,1,1]}]});
+    const option=chartOption(chart!);
+    const data=(option.series as any[])[0].data;
+    expect(data.map((p:number[])=>p[1])).toEqual([1,1,1]); // the value itself never moves
+    const offsets=data.map((p:number[])=>p[0]);
+    expect(offsets[0]).toBeCloseTo(-0.06,5);
+    expect(offsets[1]).toBeCloseTo(0,5);
+    expect(offsets[2]).toBeCloseTo(0.06,5);
   });
 });
 

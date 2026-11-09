@@ -1,17 +1,24 @@
 /** Portable, data-only chat chart contract. No React, DOM or execution code. */
 export const CHART_CONTRACT_VERSION = 'workplane.chat-chart/1' as const;
-export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter'] as const;
+export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm'] as const;
+// These take raw numeric samples (not pre-aggregated label/value pairs); the
+// renderer computes bins, quantiles or a density curve from them.
+export const SAMPLE_CHART_TYPES = ['histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm'] as const;
 export const CHART_THEMES = ['default', 'minimal', 'presentation', 'high_contrast'] as const;
 export const chatChartHeight = (type: string): number => type === 'sparkline' ? 120 : 340;
 export type ChartType = typeof CHART_TYPES[number];
 export type ChartTheme = typeof CHART_THEMES[number];
 export interface ChartPoint { label: string; value: number }
 export interface ChartSeries { name: string; points: { x: string | number; y: number }[] }
-export interface IntervalSeries { name: string; points: { x: string | number; low: number; high: number }[] }
+export interface IntervalSeries { name: string; points: { x: string | number; low: number; high: number; value?: number }[] }
+// Raw samples for histogram/box_plot/density/ecdf/strip_plot/beeswarm: the
+// renderer, not the caller, computes bins, a five-number summary or a
+// density curve, so the same reproducible transform always applies.
+export interface SampleSeries { name: string; values: number[] }
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
-  series: ChartPoint[] | ChartSeries[] | IntervalSeries[]; observations?: string[];
+  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
@@ -23,17 +30,24 @@ const multi = { type: 'object', additionalProperties: false, required: ['name', 
     properties: { x: { anyOf: [text, { type: 'number' }] }, y: { type: 'number' } },
   } },
 } };
-// Used by range_area: a band needs two bounds per x, not a single y.
+// Used by range_area (band) and error_bar (whisker): both need two bounds
+// per x, not a single y. error_bar may also give the drawn point's own
+// value, when it isn't the midpoint of low/high.
 const rangeMulti = { type: 'object', additionalProperties: false, required: ['name', 'points'], properties: {
   name: text, points: { type: 'array', minItems: 1, maxItems: 500, items: {
     type: 'object', additionalProperties: false, required: ['x', 'low', 'high'],
-    properties: { x: { anyOf: [text, { type: 'number' }] }, low: { type: 'number' }, high: { type: 'number' } },
+    properties: { x: { anyOf: [text, { type: 'number' }] }, low: { type: 'number' }, high: { type: 'number' }, value: { type: 'number' } },
   } },
+} };
+// Used by histogram/box_plot/density/ecdf/strip_plot/beeswarm: raw samples,
+// not pre-aggregated points. The renderer computes bins/quantiles/density.
+const sample = { type: 'object', additionalProperties: false, required: ['name', 'values'], properties: {
+  name: text, values: { type: 'array', minItems: 1, maxItems: 2000, items: { type: 'number' } },
 } };
 export const chartToolSchema = {
   type: 'object', additionalProperties: false, required: ['chart_type', 'series'], properties: {
     chart_type: { type: 'string', enum: CHART_TYPES }, title: text, x_label: text, y_label: text,
-    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti] } },
+    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample] } },
     observations: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 1000 } },
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
   },
@@ -46,9 +60,14 @@ export const chartToolSchema = {
     if: { properties: { chart_type: { enum: ['pareto', 'waterfall'] } }, required: ['chart_type'] },
     then: { properties: { series: { anyOf: [{ items: point }, { maxItems: 1, items: multi }] } } },
   }, {
-    if: { properties: { chart_type: { const: 'range_area' } }, required: ['chart_type'] },
+    if: { properties: { chart_type: { enum: ['range_area', 'error_bar'] } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 12, items: rangeMulti } } },
-    else: { properties: { series: { items: { anyOf: [point, multi] } } } },
+  }, {
+    if: { properties: { chart_type: { enum: SAMPLE_CHART_TYPES } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 12, items: sample } } },
+  }, {
+    if: { properties: { chart_type: { const: 'histogram' } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 1 } } },
   }, {
     if: { properties: { chart_type: { const: 'dumbbell' } }, required: ['chart_type'] },
     then: { properties: { series: { minItems: 2, maxItems: 2, items: multi } } },
@@ -75,7 +94,14 @@ export const chartCatalog = {
     { types: ['waterfall'], purpose: 'Show a running total through a sequence of signed increases and decreases; single series where each point is a delta from the previous total, not an absolute value.', status: 'supported' },
     { types: ['funnel', 'pyramid'], purpose: 'Show a nonnegative quantity narrowing (funnel) or widening (pyramid) through ordered stages.', status: 'supported' },
     { types: ['waffle'], purpose: 'Show nonnegative parts of a whole as a 10x10 grid of unit squares, one block per percentage point; best for one proportion at a glance, not precise multi-way comparison.', status: 'supported' },
+    { types: ['error_bar'], purpose: 'Show a measurement plus its uncertainty range; like range_area but for a single point per x rather than a continuous band. Give low/high (and an explicit value if the drawn point is not their midpoint).', status: 'supported' },
     { types: ['scatter'], purpose: 'Show relationships between two numeric measurements; use numeric x/y points.', status: 'supported' },
+    { types: ['histogram'], purpose: 'Show the distribution of one sample of raw numeric observations, auto-binned into equal-width bins; single series only.', status: 'supported' },
+    { types: ['box_plot'], purpose: 'Show the five-number summary (min, quartiles, max) of one or more named samples of raw observations, for comparing distributions across groups.', status: 'supported' },
+    { types: ['density'], purpose: 'Show a smoothed estimate of the distribution shape of one or more named samples, as a continuous curve rather than discrete bins.', status: 'supported' },
+    { types: ['ecdf'], purpose: 'Show what fraction of a sample falls at or below each value, as a nondecreasing step curve from 0 to 1; good for comparing whole distributions without binning.', status: 'supported' },
+    { types: ['strip_plot'], purpose: 'Show every raw observation of one or more named samples as points along one lane per sample, with no binning or smoothing.', status: 'supported' },
+    { types: ['beeswarm'], purpose: 'Like strip_plot, but spreads overlapping points sideways within local density bins so individual observations stay visible rather than stacking on top of each other.', status: 'supported' },
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
   instructions: 'Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.',
@@ -93,6 +119,28 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   if (p.appearance !== undefined && !['auto', 'light', 'dark'].includes(p.appearance as string)) return null;
   if (p.observations !== undefined && (!Array.isArray(p.observations) || p.observations.length > 6 || p.observations.some(x => typeof x !== 'string' || x.length > 1000))) return null;
   if (!Array.isArray(p.series) || !p.series.length || p.series.length > 500) return null;
+  const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+  const label = (s: unknown) => typeof s === 'string' && s.length <= 300;
+
+  // Raw samples are a distinct shape ({name, values: number[]}), not the
+  // {name, points} wrapper every other type uses, so they get their own path.
+  if ((SAMPLE_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) {
+    if (p.series.length > 12) return null;
+    // A histogram bins exactly one sample; nothing else to compare it against.
+    if (p.chart_type === 'histogram' && p.series.length !== 1) return null;
+    let sampleCount = 0;
+    for (const item of p.series) {
+      if (!item || typeof item !== 'object') return null;
+      if (!label((item as Record<string, unknown>).name) || Object.keys(item).some(k => !['name', 'values'].includes(k))) return null;
+      const values = (item as Record<string, unknown>).values;
+      if (!Array.isArray(values) || !values.length || values.length > 2000 || values.some(v => !finite(v))) return null;
+      sampleCount += values.length;
+    }
+    if (sampleCount > 2000) return null;
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
   const isMulti = typeof p.series[0]?.name === 'string';
   if (isMulti && p.series.length > 12) return null;
   const percent = p.chart_type === 'stacked_bar_100' || p.chart_type === 'stacked_area_100';
@@ -100,9 +148,9 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   // percentage, a Pareto ranking, a funnel/pyramid stage, a rose slice, or a
   // waffle's unit squares.
   const nonnegative = percent || ['pareto', 'funnel', 'pyramid', 'rose', 'waffle'].includes(p.chart_type as string);
-  // range_area's points carry low/high instead of y; it is always the named
-  // multi-series wrapper, never the plain {label, value} shape.
-  const isInterval = p.chart_type === 'range_area';
+  // range_area's and error_bar's points carry low/high instead of y; both
+  // are always the named multi-series wrapper, never {label, value}.
+  const isInterval = p.chart_type === 'range_area' || p.chart_type === 'error_bar';
   if (isInterval && !isMulti) return null;
   // Dumbbell compares exactly two named series; lollipop is one series drawn
   // with a lighter weight, so a named-series lollipop can only be the one.
@@ -112,8 +160,6 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   // compares named series the way stacked/dumbbell charts do.
   if ((p.chart_type === 'pareto' || p.chart_type === 'waterfall') && isMulti && p.series.length !== 1) return null;
   let count = 0;
-  const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
-  const label = (s: unknown) => typeof s === 'string' && s.length <= 300;
   for (const item of p.series) {
     if (!item || typeof item !== 'object') return null;
     if (isMulti) {
@@ -121,7 +167,8 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
       for (const q of item.points) {
         if (!q) return null;
         if (isInterval) {
-          if (Object.keys(q).some(k => !['x', 'low', 'high'].includes(k)) || !(label(q.x) || finite(q.x)) || !finite(q.low) || !finite(q.high) || q.low > q.high || !finite(q.high - q.low)) return null;
+          if (Object.keys(q).some(k => !['x', 'low', 'high', 'value'].includes(k)) || !(label(q.x) || finite(q.x)) || !finite(q.low) || !finite(q.high) || q.low > q.high || !finite(q.high - q.low)) return null;
+          if (q.value !== undefined && (!finite(q.value) || q.value < q.low || q.value > q.high)) return null;
         } else {
           if (Object.keys(q).some(k => !['x', 'y'].includes(k)) || !(label(q.x) || finite(q.x)) || !finite(q.y)) return null;
           if (nonnegative && q.y < 0) return null;

@@ -1,9 +1,9 @@
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart } from 'echarts/charts';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, TooltipComponent, AriaComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries } from './contract.js';
-echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, GridComponent, LegendComponent, TooltipComponent, AriaComponent, SVGRenderer]);
+import { validateChatChart, SAMPLE_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries } from './contract.js';
+echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, GridComponent, LegendComponent, TooltipComponent, AriaComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
   minimal: ['#475569', '#64748b', '#94a3b8', '#334155', '#0f766e', '#9a3412'],
@@ -26,11 +26,128 @@ function allocateSquares(values: number[], total: number, squares: number): numb
   for (let k = 0; used < squares && k < remainders.length; k++, used++) result[remainders[k]!.i]!++;
   return result;
 }
+/** Linear-interpolation quantile (the common "type 7" definition). */
+function quantile(sorted: number[], q: number): number {
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (pos - lo);
+}
+/** Gaussian KDE with Silverman's rule-of-thumb bandwidth: deterministic and reproducible from the sample alone. */
+function gaussianKde(values: number[], grid: number[]): number[] {
+  const n = values.length;
+  const mean = values.reduce((sum, v) => sum + v, 0) / n;
+  const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / Math.max(1, n - 1);
+  const h = (1.06 * Math.sqrt(variance) * Math.pow(n, -1 / 5)) || 1;
+  const norm = 1 / (n * h * Math.sqrt(2 * Math.PI));
+  return grid.map(x => norm * values.reduce((sum, v) => sum + Math.exp(-0.5 * ((x - v) / h) ** 2), 0));
+}
+/**
+ * Deterministic beeswarm jitter: bins values the same way the histogram
+ * transform does, then spreads each bin's points symmetrically around the
+ * lane center in input order. No randomness, no collision search.
+ */
+function beeswarmOffsets(values: number[], step = 0.06): number[] {
+  const min = Math.min(...values), max = Math.max(...values);
+  const bins = Math.max(1, Math.min(20, Math.ceil(Math.sqrt(values.length))));
+  const width = max > min ? (max - min) / bins : 1;
+  const binOf = (v: number) => (max > min ? Math.min(bins - 1, Math.floor((v - min) / width)) : 0);
+  const binIndex = values.map(binOf);
+  const counts = new Map<number, number>();
+  for (const b of binIndex) counts.set(b, (counts.get(b) ?? 0) + 1);
+  const seen = new Map<number, number>();
+  return binIndex.map(b => {
+    const k = seen.get(b) ?? 0;
+    seen.set(b, k + 1);
+    return (k - (counts.get(b)! - 1) / 2) * step;
+  });
+}
 export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
+  const type = payload.chart_type;
+  const text = dark ? '#e2e8f0' : '#334155';
+  const grid = dark ? '#334155' : '#e2e8f0';
+  const color = [...palettes[payload.theme || 'default']];
+  if (dark && payload.theme === 'high_contrast') color[color.length - 1] = '#ffffff';
+  // Raw samples ({name, values: number[]}) are a different shape entirely —
+  // no `.points` — so they are handled before any of the point-shape logic
+  // below ever looks at payload.series.
+  if ((SAMPLE_CHART_TYPES as readonly string[]).includes(type)) {
+    const samples = payload.series as SampleSeries[];
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: type === 'strip_plot' || type === 'beeswarm' ? 'item' : 'axis', renderMode: 'richText', confine: true },
+    };
+    if (type === 'histogram') {
+      // Validated to be exactly one series: one sample, auto-binned.
+      const values = samples[0]!.values;
+      const min = Math.min(...values), max = Math.max(...values);
+      const bins = max > min ? 10 : 1;
+      const width = max > min ? (max - min) / bins : 1;
+      const counts = new Array(bins).fill(0) as number[];
+      for (const v of values) counts[Math.min(bins - 1, Math.floor((v - min) / width))]!++;
+      const round = (n: number) => Math.round(n * 100) / 100;
+      const labels = Array.from({ length: bins }, (_, i) => `${round(min + i * width)}–${round(min + (i + 1) * width)}`);
+      option.xAxis = { type: 'category', data: labels, name: payload.x_label, axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+      option.yAxis = { type: 'value', name: payload.y_label || 'Count', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.legend = { show: false };
+      option.series = [{ name: samples[0]!.name, type: 'bar', data: counts, itemStyle: { color: color[0] } }];
+      return option;
+    }
+    if (type === 'box_plot') {
+      const boxes = samples.map(s => {
+        const sorted = [...s.values].sort((a, b) => a - b);
+        return [sorted[0]!, quantile(sorted, 0.25), quantile(sorted, 0.5), quantile(sorted, 0.75), sorted[sorted.length - 1]!];
+      });
+      option.xAxis = { type: 'category', data: samples.map(s => s.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+      option.yAxis = { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.legend = { show: false };
+      option.series = [{ type: 'boxplot', data: boxes, itemStyle: { color: color[0], borderColor: text } }];
+      return option;
+    }
+    if (type === 'density') {
+      const all = samples.flatMap(s => s.values);
+      const min = Math.min(...all), max = Math.max(...all);
+      const pad = (max - min || 1) * 0.1;
+      const gridPoints = 60;
+      const xs = Array.from({ length: gridPoints }, (_, i) => min - pad + ((max - min + 2 * pad) * i) / (gridPoints - 1));
+      option.xAxis = { type: 'value', name: payload.x_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.yAxis = { type: 'value', name: payload.y_label || 'Density', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.legend = { show: samples.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: samples.map(s => s.name) };
+      option.series = samples.map((s, i) => {
+        const ys = gaussianKde(s.values, xs);
+        return { name: s.name, type: 'line', smooth: true, symbol: 'none', lineStyle: { color: color[i % color.length] },
+          areaStyle: { color: color[i % color.length], opacity: 0.15 }, data: xs.map((x, k) => [x, ys[k]]) };
+      });
+      return option;
+    }
+    if (type === 'ecdf') {
+      option.xAxis = { type: 'value', name: payload.x_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.yAxis = { type: 'value', min: 0, max: 1, name: payload.y_label || 'Cumulative share', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.legend = { show: samples.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: samples.map(s => s.name) };
+      option.series = samples.map((s, i) => {
+        const sorted = [...s.values].sort((a, b) => a - b);
+        return { name: s.name, type: 'line', step: 'start', symbol: 'none', lineStyle: { color: color[i % color.length] },
+          data: sorted.map((v, k) => [v, (k + 1) / sorted.length]) };
+      });
+      return option;
+    }
+    // strip_plot and beeswarm: one lane per named sample, raw points along
+    // the value axis; beeswarm additionally spreads overlap sideways.
+    option.xAxis = { type: 'category', data: samples.map(s => s.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+    option.yAxis = { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+    option.legend = { show: false };
+    option.series = samples.map((s, i) => {
+      const jitter = type === 'beeswarm' ? beeswarmOffsets(s.values) : s.values.map(() => 0);
+      return { name: s.name, type: 'scatter', symbolSize: 8,
+        itemStyle: { color: color[i % color.length], opacity: type === 'strip_plot' ? 0.55 : 0.85 },
+        data: s.values.map((v, k) => [i + jitter[k]!, v]) };
+    });
+    return option;
+  }
   const multi = 'name' in payload.series[0]!;
   const series = multi ? payload.series as ChartSeries[] : [{ name: payload.title || 'Value', points: (payload.series as ChartPoint[]).map(p => ({ x: p.label, y: p.value })) }];
   const categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
-  const type = payload.chart_type;
   const pie = type === 'pie' || type === 'donut' || type === 'rose';
   // Funnel/pyramid share the pie branch below: both are a single ranked set
   // of nonnegative name/value slices with no cartesian axes, differing only
@@ -41,10 +158,6 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
   const percent = type === 'stacked_bar_100' || type === 'stacked_area_100';
   // Minimal trend indicator: same series as line/area, axes and legend hidden.
   const sparkline = type === 'sparkline';
-  const text = dark ? '#e2e8f0' : '#334155';
-  const grid = dark ? '#334155' : '#e2e8f0';
-  const color = [...palettes[payload.theme || 'default']];
-  if (dark && payload.theme === 'high_contrast') color[color.length - 1] = '#ffffff';
   const option: echarts.EChartsCoreOption = {
     animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
@@ -109,6 +222,27 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
         { name: b.name, type: 'line', stack: `range-${i}`, stackStrategy: 'all', symbol: 'none',
           lineStyle: { opacity: 0 }, areaStyle: { color: color[i % color.length], opacity: 0.22 }, data: span,
           dimensions: ['Category', 'Span', 'Low', 'High'], encode: { x: 0, y: 1, tooltip: [2, 3] } },
+      ];
+    });
+    return option;
+  }
+  if (type === 'error_bar') {
+    const bars = payload.series as IntervalSeries[];
+    option.legend = { show: bars.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: bars.map(b => b.name) };
+    option.series = bars.flatMap((b, i) => {
+      const points = categories.map(x => b.points.find(p => String(p.x) === x));
+      const base = points.map(p => p?.low ?? null);
+      const span = points.map(p => (p ? p.high - p.low : null));
+      const center = points.map(p => (p ? p.value ?? (p.low + p.high) / 2 : null));
+      return [
+        // Same invisible-base-plus-band trick as range_area, but drawn as a
+        // thin whisker (bar) rather than a filled area, plus a dot at the
+        // measurement itself (the midpoint of low/high unless given).
+        { name: `${b.name} (whisker base)`, type: 'bar', stack: `error-${i}`, stackStrategy: 'all', barWidth: 2,
+          itemStyle: { opacity: 0 }, data: base, tooltip: { show: false }, silent: true },
+        { name: `${b.name} (whisker)`, type: 'bar', stack: `error-${i}`, stackStrategy: 'all', barWidth: 2,
+          itemStyle: { color: color[i % color.length], opacity: 0.6 }, data: span, tooltip: { show: false }, silent: true },
+        { name: b.name, type: 'scatter', symbolSize: 10, itemStyle: { color: color[i % color.length] }, data: center },
       ];
     });
     return option;
