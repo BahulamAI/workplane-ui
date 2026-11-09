@@ -1,6 +1,9 @@
 /** Portable, data-only chat chart contract. No React, DOM or execution code. */
 export const CHART_CONTRACT_VERSION = 'workplane.chat-chart/1' as const;
-export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates'] as const;
+export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'error_bar', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'rose', 'pareto', 'waterfall', 'funnel', 'pyramid', 'waffle', 'scatter', 'bubble', 'scatter_trend', 'histogram', 'box_plot', 'density', 'ecdf', 'strip_plot', 'beeswarm', 'scatter_matrix', 'correlation_matrix', 'parallel_coordinates', 'radar', 'polar_bar', 'gauge', 'bullet', 'progress'] as const;
+// Targets/status: a flat {name, value, ...bounds} item, not a {name, points}
+// or {name, values} wrapper — there is only ever one measurement per name.
+export const TARGET_CHART_TYPES = ['gauge', 'bullet', 'progress'] as const;
 // These take raw numeric samples (not pre-aggregated label/value pairs); the
 // renderer computes bins, quantiles, a density curve, or (for the last three)
 // pairwise relationships across aligned columns, from them.
@@ -22,10 +25,14 @@ export interface IntervalSeries { name: string; points: { x: string | number; lo
 export interface SampleSeries { name: string; values: number[] }
 // Used by bubble: a third nonnegative magnitude per point, encoded as area.
 export interface BubbleSeries { name: string; points: { x: number; y: number; size: number }[] }
+// Used by gauge/bullet/progress: one measurement per name, not a series of
+// points — `bands` (ascending qualitative thresholds) only means anything
+// for bullet; `target` means anything for gauge and bullet.
+export interface TargetSeries { name: string; value: number; min?: number; max?: number; target?: number; bands?: number[] }
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
-  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[]; observations?: string[];
+  series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
@@ -59,19 +66,27 @@ const bubbleMulti = { type: 'object', additionalProperties: false, required: ['n
     properties: { x: { type: 'number' }, y: { type: 'number' }, size: { type: 'number', minimum: 0 } },
   } },
 } };
+// Used by gauge/bullet/progress: one flat measurement per name.
+const targetItem = { type: 'object', additionalProperties: false, required: ['name', 'value'], properties: {
+  name: text, value: { type: 'number' }, min: { type: 'number' }, max: { type: 'number' }, target: { type: 'number' },
+  bands: { type: 'array', maxItems: 5, items: { type: 'number' } },
+} };
 export const chartToolSchema = {
   type: 'object', additionalProperties: false, required: ['chart_type', 'series'], properties: {
     chart_type: { type: 'string', enum: CHART_TYPES }, title: text, x_label: text, y_label: text,
-    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti] } },
+    series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem] } },
     observations: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 1000 } },
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
   },
   allOf: [{
-    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', ...SAMPLE_CHART_TYPES] } } }, required: ['chart_type'] },
+    if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES] } } }, required: ['chart_type'] },
     then: { properties: { series: { items: { anyOf: [point, multi] } } } },
   }, {
     if: { properties: { chart_type: { const: 'bubble' } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 12, items: bubbleMulti } } },
+  }, {
+    if: { properties: { chart_type: { enum: TARGET_CHART_TYPES } }, required: ['chart_type'] },
+    then: { properties: { series: { maxItems: 6, items: targetItem } } },
   }, {
     if: { properties: { chart_type: { enum: ALIGNED_SAMPLE_CHART_TYPES } }, required: ['chart_type'] },
     then: { properties: { series: { minItems: 2, maxItems: 6, items: sample } } },
@@ -131,6 +146,11 @@ export const chartCatalog = {
     { types: ['scatter_matrix'], purpose: 'Show pairwise scatter plots for 2-6 aligned numeric columns (each row is one observation across every column) in a grid; good for spotting which pairs of variables relate.', status: 'supported' },
     { types: ['correlation_matrix'], purpose: 'Show the pairwise Pearson correlation coefficient for 2-6 aligned numeric columns as a color-coded, labeled grid.', status: 'supported' },
     { types: ['parallel_coordinates'], purpose: 'Show each observation as a line crossing one axis per aligned numeric column (2-6), for spotting patterns across many dimensions at once.', status: 'supported' },
+    { types: ['radar'], purpose: 'Show one or more named profiles scored across the same set of indicators (the x labels), one axis per indicator; a series missing an indicator counts as 0 there.', status: 'supported' },
+    { types: ['polar_bar'], purpose: 'Like bar, but arranged around a circle (angle = category, radius = value); good for cyclical categories like hours of day or months of year.', status: 'supported' },
+    { types: ['gauge'], purpose: "Show a single measurement against a min/max range (default 0-100), optionally with a target shown in the label; 1-6 named gauges per chart.", status: 'supported' },
+    { types: ['bullet'], purpose: 'Show a measurement against a target and qualitative background bands (e.g. poor/satisfactory/good) within a min/max range; 1-6 named bullets per chart.', status: 'supported' },
+    { types: ['progress'], purpose: 'Show one or more named values as a filled bar against a max (default 100); a lightweight progress/thermometer indicator, not a dial.', status: 'supported' },
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
   instructions: 'Use render_chart with computed values. Do not invent data. Use render_table for exact values and render_kpi_cards for headline numbers. No code, callbacks, remote URLs or executable specifications.',
@@ -199,6 +219,34 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
       }
     }
     if (bubbleCount > 2000) return null;
+    try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
+    return value as ChatChartPresentation;
+  }
+
+  // Gauge/bullet/progress: one flat {name, value, ...bounds} item per named
+  // target, never a {name, points} or {name, values} wrapper.
+  if ((TARGET_CHART_TYPES as readonly string[]).includes(p.chart_type as string)) {
+    if (p.series.length > 6) return null;
+    for (const item of p.series) {
+      if (!item || typeof item !== 'object') return null;
+      const t = item as Record<string, unknown>;
+      if (!label(t.name) || !finite(t.value) || Object.keys(t).some(k => !['name', 'value', 'min', 'max', 'target', 'bands'].includes(k))) return null;
+      if (t.min !== undefined && !finite(t.min)) return null;
+      if (t.max !== undefined && !finite(t.max)) return null;
+      if (t.min !== undefined && t.max !== undefined && (t.min as number) >= (t.max as number)) return null;
+      const min = typeof t.min === 'number' ? t.min : 0;
+      const max = typeof t.max === 'number' ? t.max : 100;
+      if ((t.value as number) < min || (t.value as number) > max) return null;
+      if (t.target !== undefined && (!finite(t.target) || (t.target as number) < min || (t.target as number) > max)) return null;
+      if (t.bands !== undefined) {
+        if (!Array.isArray(t.bands) || !t.bands.length || t.bands.length > 5) return null;
+        let prev = min;
+        for (const edge of t.bands) {
+          if (!finite(edge) || (edge as number) <= prev || (edge as number) > max) return null;
+          prev = edge as number;
+        }
+      }
+    }
     try { if (JSON.stringify(value).length > 64000) return null; } catch { return null; }
     return value as ChatChartPresentation;
   }

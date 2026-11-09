@@ -1,10 +1,10 @@
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent } from 'echarts/components';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries } from './contract.js';
-echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart,
-  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, SVGRenderer]);
+import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries } from './contract.js';
+echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart,
+  GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
   minimal: ['#475569', '#64748b', '#94a3b8', '#334155', '#0f766e', '#9a3412'],
@@ -217,6 +217,76 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     });
     return option;
   }
+  // Targets/status ({name, value, ...bounds}) are also a flat shape with no
+  // `.points`, handled the same way as the sample types above.
+  if ((TARGET_CHART_TYPES as readonly string[]).includes(type)) {
+    const targets = payload.series as TargetSeries[];
+    const n = targets.length;
+    const option: echarts.EChartsCoreOption = {
+      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
+      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
+      legend: { show: false },
+    };
+    if (type === 'gauge') {
+      option.series = targets.map((g, i) => ({
+        type: 'gauge', center: [`${((i + 0.5) / n) * 100}%`, '58%'], radius: `${Math.min(42, 85 / n)}%`,
+        min: g.min ?? 0, max: g.max ?? 100,
+        progress: { show: true, width: 10 },
+        axisLine: { lineStyle: { width: 10, color: [[1, color[i % color.length]]] } },
+        pointer: { show: true, length: '55%', itemStyle: { color: text } },
+        axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+        title: { show: true, offsetCenter: [0, '70%'], color: text, fontSize: 12 },
+        // A plain string template with the target spliced in at build time —
+        // not a function, so it stays data-only all the way to the option.
+        detail: { valueAnimation: false, offsetCenter: [0, '40%'], color: text, fontSize: 16,
+          formatter: g.target !== undefined ? `{value} / ${g.target}` : '{value}' },
+        data: [{ value: g.value, name: g.name }],
+      }));
+      return option;
+    }
+    if (type === 'progress') {
+      option.xAxis = { type: 'value', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+      option.yAxis = { type: 'category', data: targets.map(p => p.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+      option.series = targets.map((p, i) => {
+        const max = p.max ?? 100;
+        return { name: p.name, type: 'bar', barWidth: 14, itemStyle: { color: color[i % color.length], borderRadius: 4 },
+          data: targets.map((_, r) => (r === i ? p.value : null)),
+          markArea: { silent: true, data: [[
+            { xAxis: 0, yAxis: i - 0.35, itemStyle: { color: grid, opacity: 0.2 } },
+            { xAxis: max, yAxis: i + 0.35 },
+          ]] } };
+      });
+      return option;
+    }
+    // bullet: a value bar over qualitative background bands (markArea) with
+    // an optional target tick (markPoint), both anchored to this bullet's
+    // own row only via explicit xAxis/yAxis bounds.
+    option.xAxis = { type: 'value', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+    option.yAxis = { type: 'category', data: targets.map(b => b.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+    option.series = targets.flatMap((b, i) => {
+      const min = b.min ?? 0, max = b.max ?? 100;
+      const edges = [min, ...((b.bands && b.bands.length) ? b.bands : [max])];
+      const markAreaData = edges.slice(0, -1).map((start, k) => ([
+        { xAxis: start, yAxis: i - 0.3, itemStyle: { color: grid, opacity: 0.15 + 0.12 * k } },
+        { xAxis: edges[k + 1]!, yAxis: i + 0.3 },
+      ]));
+      const markPointData = b.target !== undefined
+        ? [{ xAxis: b.target, yAxis: i, symbol: 'rect', symbolSize: [3, 20], itemStyle: { color: text } }] : [];
+      return [
+        { name: `${b.name} base`, type: 'bar', stack: `bullet-${i}`, stackStrategy: 'all', barWidth: 10,
+          itemStyle: { opacity: 0 }, data: targets.map((_, r) => (r === i ? min : null)), tooltip: { show: false }, silent: true },
+        { name: b.name, type: 'bar', stack: `bullet-${i}`, stackStrategy: 'all', barWidth: 10,
+          itemStyle: { color: color[i % color.length] },
+          data: targets.map((_, r) => (r === i ? b.value - min : null)),
+          markArea: { silent: true, data: markAreaData },
+          ...(markPointData.length ? { markPoint: { symbol: 'rect', symbolSize: [3, 20],
+            itemStyle: { color: text }, data: markPointData } } : {}) },
+      ];
+    });
+    return option;
+  }
   const multi = 'name' in payload.series[0]!;
   const series = multi ? payload.series as ChartSeries[] : [{ name: payload.title || 'Value', points: (payload.series as ChartPoint[]).map(p => ({ x: p.label, y: p.value })) }];
   const categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
@@ -234,7 +304,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
     aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
-    tooltip: { trigger: pie || funnel || type === 'scatter' || type === 'scatter_trend' || type === 'bubble' || type === 'waffle' ? 'item' : 'axis', renderMode: 'richText', confine: true },
+    tooltip: { trigger: pie || funnel || type === 'scatter' || type === 'scatter_trend' || type === 'bubble' || type === 'waffle' || type === 'radar' || type === 'polar_bar' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     legend: { show: !sparkline && (pie || funnel || series.length > 1), type: 'scroll', bottom: 0, textStyle: { color: text } },
     grid: sparkline ? { left: 2, right: 2, top: 2, bottom: 2 } : { left: 60, right: 24, top: 24, bottom: 65, containLabel: true },
   };
@@ -286,6 +356,33 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.series = bubbles.map((b, i) => ({ name: b.name, type: 'scatter',
       itemStyle: { color: color[i % color.length], opacity: 0.7 },
       data: b.points.map(p => ({ value: [p.x, p.y], symbolSize: diameter(p.size) })) }));
+    return option;
+  }
+  if (type === 'radar') {
+    // Reuses the same {name, points: {x, y}} shape as bar/line: x is the
+    // indicator label, y the score. A series missing an indicator is 0
+    // there — radar needs a value per indicator to draw a closed shape.
+    (option as Record<string, unknown>).radar = { indicator: categories.map(name => ({ name })),
+      axisName: { color: text }, splitLine: { lineStyle: { color: grid } }, axisLine: { lineStyle: { color: grid } },
+      splitArea: { show: false } };
+    option.legend = { show: series.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: series.map(s => s.name) };
+    option.series = [{ type: 'radar', data: series.map((s, i) => ({ name: s.name,
+      value: categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? 0),
+      itemStyle: { color: color[i % color.length] }, lineStyle: { color: color[i % color.length] },
+      areaStyle: { color: color[i % color.length], opacity: 0.12 } })) }];
+    return option;
+  }
+  if (type === 'polar_bar') {
+    // Same category/value data as bar, laid out on angle/radius axes
+    // instead of x/y — a circular bar chart for cyclical categories.
+    (option as Record<string, unknown>).polar = {};
+    (option as Record<string, unknown>).angleAxis = { type: 'category', data: categories,
+      axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+    (option as Record<string, unknown>).radiusAxis = { type: 'value', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
+    option.legend = { show: series.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: series.map(s => s.name) };
+    option.series = series.map((s, i) => ({ name: s.name, type: 'bar', coordinateSystem: 'polar',
+      itemStyle: { color: color[i % color.length] },
+      data: categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? null) }));
     return option;
   }
   const categoryAxis = { type: 'category', data: categories, name: sparkline ? undefined : payload.x_label,

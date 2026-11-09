@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
+import { chartCatalog, CHART_TYPES, SAMPLE_CHART_TYPES, ALIGNED_SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, validateChatChart } from '../../packages/workplane-ui/src/chat/contract';
 import { chartOption } from '../../packages/workplane-ui/src/chat/engine';
 // Most types accept the plain {label, value} shape; a few need a shape that
 // shows what makes them distinct (range_area/error_bar's bounds, dumbbell's
-// exactly-two series, the sample types' raw values, bubble's size) to even
-// validate.
+// exactly-two series, the sample types' raw values, bubble's size, the
+// target types' flat {name, value}) to even validate.
 const fixtureFor = (chart_type: string) =>
   (chart_type === 'range_area' || chart_type === 'error_bar') ? [{name:'one',points:[{x:'A',low:1,high:5}]}]
   : chart_type === 'dumbbell' ? [{name:'before',points:[{x:'A',y:1}]},{name:'after',points:[{x:'A',y:9}]}]
   : chart_type === 'bubble' ? [{name:'one',points:[{x:1,y:2,size:3}]}]
   : (ALIGNED_SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'x',values:[1,2,3]},{name:'y',values:[4,5,6]}]
   : (SAMPLE_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'one',values:[1,2,2,3,5,8]}]
+  : (TARGET_CHART_TYPES as readonly string[]).includes(chart_type) ? [{name:'one',value:70,min:0,max:100,target:80,bands:[50,80,100]}]
   : [{label:'A',value:5},{label:'B',value:9}];
 describe('portable chat chart contract', () => {
   for (const chart_type of CHART_TYPES) it(`renders ${chart_type} as a supported ECharts option`, () => {
@@ -282,6 +283,66 @@ describe('portable chat chart contract', () => {
     expect(option.parallelAxis).toHaveLength(2);
     expect(option.parallelAxis.map((a:any)=>a.name)).toEqual(['a','b']);
     expect(option.series[0].data).toEqual([[1,3],[2,4]]);
+  });
+  it('builds a radar from the same {name, points} shape as bar, defaulting a missing indicator to 0', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'radar',series:[
+      {name:'Product A',points:[{x:'Speed',y:8},{x:'Comfort',y:5}]},{name:'Product B',points:[{x:'Speed',y:3}]}]});
+    const option=chartOption(chart!) as any;
+    expect(option.radar.indicator).toEqual([{name:'Speed'},{name:'Comfort'}]);
+    expect(option.series[0].data).toEqual([
+      {name:'Product A',value:[8,5],itemStyle:expect.anything(),lineStyle:expect.anything(),areaStyle:expect.anything()},
+      {name:'Product B',value:[3,0],itemStyle:expect.anything(),lineStyle:expect.anything(),areaStyle:expect.anything()},
+    ]);
+  });
+  it('lays out polar_bar on angle/radius axes with the same category/value data as bar', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'polar_bar',series:[
+      {name:'s1',points:[{x:'Jan',y:5},{x:'Feb',y:9}]}]});
+    const option=chartOption(chart!) as any;
+    expect(option.angleAxis.data).toEqual(['Jan','Feb']);
+    expect(option.series[0]).toMatchObject({ type: 'bar', coordinateSystem: 'polar', data: [5,9] });
+  });
+  it('rejects an out-of-range gauge value or target, and an inverted min/max', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'gauge'};
+    expect(validateChatChart({...base,series:[{name:'CPU',value:150,max:100}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{name:'CPU',value:70,max:100,target:150}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{name:'CPU',value:70,min:100,max:0}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{name:'CPU',value:70,max:100,target:80}]})).not.toBeNull();
+  });
+  it('renders a gauge with the target spliced into a plain string label, not a function', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'gauge',series:[
+      {name:'CPU',value:70,max:100,target:80}]});
+    const option=chartOption(chart!);
+    const series=(option.series as any[])[0];
+    expect(series.detail.formatter).toBe('{value} / 80');
+    expect(series.data).toEqual([{value:70,name:'CPU'}]);
+    expect(JSON.stringify(option)).not.toContain('function');
+  });
+  it('rejects bullet bands that are not ascending or that exceed max', () => {
+    const base={schema_version:'bahulam_render_v1',type:'chart',chart_type:'bullet'};
+    expect(validateChatChart({...base,series:[{name:'A',value:10,max:100,bands:[80,50,100]}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{name:'A',value:10,max:100,bands:[50,80,150]}]})).toBeNull();
+    expect(validateChatChart({...base,series:[{name:'A',value:10,max:100,bands:[50,80,100]}]})).not.toBeNull();
+  });
+  it('draws a bullet as a base+value stack with qualitative bands and a target tick, scoped to its own row', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bullet',series:[
+      {name:'Revenue',value:72,min:0,max:100,target:75,bands:[50,80,100]}]});
+    const option=chartOption(chart!);
+    const series=option.series as any[];
+    expect(series).toHaveLength(2); // invisible base + visible value, one bullet
+    expect(series[0].data).toEqual([0]); // base = min
+    expect(series[1].data).toEqual([72]); // value - min
+    expect(series[1].markArea.data).toHaveLength(3); // three band segments
+    expect(series[1].markArea.data[1][0].xAxis).toBe(50);
+    expect(series[1].markArea.data[1][1].xAxis).toBe(80);
+    expect(series[1].markPoint.data[0].xAxis).toBe(75);
+  });
+  it('draws progress as a single bar per named item with a full-range background track', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'progress',series:[
+      {name:'Task',value:40,max:80}]});
+    const option=chartOption(chart!);
+    const series=(option.series as any[])[0];
+    expect(series.data).toEqual([40]);
+    expect(series.markArea.data[0][1].xAxis).toBe(80);
   });
 });
 

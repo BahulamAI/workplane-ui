@@ -21,9 +21,9 @@ stacked_bar_100, line, area, step_line, range_area, error_bar, stacked_area,
 stacked_area_100, sparkline, pie, donut, rose, pareto, waterfall, funnel,
 pyramid, waffle, scatter, bubble, scatter_trend, histogram, box_plot, density,
 ecdf, strip_plot, beeswarm, scatter_matrix, correlation_matrix,
-parallel_coordinates. The `_100` variants normalize each category's series
-to percentages of what is present, without treating an absent series as a
-zero contributor.
+parallel_coordinates, radar, polar_bar, gauge, bullet, progress. The `_100`
+variants normalize each category's series to percentages of what is present,
+without treating an absent series as a zero contributor.
 Sparklines reuse the line/area data shape with axes and legend hidden.
 Lollipop is a single named series drawn as a thin stem and a dot. Dumbbell
 compares exactly two named series per category (e.g. before vs after) as two
@@ -68,6 +68,25 @@ column pair and colors each cell on a blue–white–red diverging scale (the
 diagonal is always exactly 1). Parallel_coordinates gives each column its own
 axis and draws one line per row, using ECharts' native parallel coordinate
 system.
+
+radar and polar_bar reuse the ordinary `{name, points: {x, y}}` shape bar and
+line already use: x is the indicator/category label, y the score. Radar
+draws one closed shape per named series across a shared set of indicators (a
+series missing an indicator counts as 0 there, since a radar shape needs a
+value at every axis); polar_bar is the same category/value data as bar, laid
+out on angle/radius axes instead of x/y, for cyclical categories like hours
+of day or months of year.
+
+gauge, bullet and progress take a flat `{name, value, min?, max?, target?,
+bands?}` item per named target — never a series of points — with `min`/`max`
+defaulting to 0/100 when absent. `value` (and `target`, when given) must fall
+within `[min, max]`; `bands` are ascending thresholds within that range used
+only by bullet. Gauge shows the value on a dial, with the target (if any)
+spliced into the detail label as plain text (`"{value} / 80"`), not a
+rendered marker on the dial itself. Bullet shows the value as a thin bar
+over qualitative background bands plus a target tick, both scoped to that
+bullet's own row via explicit axis bounds. Progress is a plain filled bar
+against `max`, for a lightweight indicator rather than a dial.
 
 marimekko and violin are intentionally not included. A true variable-width
 mekko chart needs ECharts' `custom` series with a `renderItem` function,
