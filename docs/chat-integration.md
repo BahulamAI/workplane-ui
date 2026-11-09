@@ -18,17 +18,22 @@ from prose on reload.
 
 Initial types: bar, horizontal_bar, lollipop, dumbbell, stacked_bar,
 stacked_bar_100, line, area, step_line, range_area, stacked_area,
-stacked_area_100, sparkline, pie, donut, scatter. The `_100` variants normalize
-each category's series to percentages of what is present, without treating an
-absent series as a zero contributor. Sparklines reuse the line/area data shape
-with axes and legend hidden. Lollipop is a single named series drawn as a thin
-stem and a dot. Dumbbell compares exactly two named series per category (e.g.
-before vs after) as two dots joined by a stem. Range_area needs a `low`/`high`
-bound per point instead of a single `y`, for an uncertainty band or min/max
-range. Themes: default, minimal, presentation, high_contrast. Appearance: auto,
-light, dark. Use numeric x/y points for scatter. `auto` follows the device's
-color-scheme setting; a host can supply an explicit appearance to match app
-settings.
+stacked_area_100, sparkline, pie, donut, pareto, waterfall, funnel, pyramid,
+scatter. The `_100` variants normalize each category's series to percentages
+of what is present, without treating an absent series as a zero contributor.
+Sparklines reuse the line/area data shape with axes and legend hidden.
+Lollipop is a single named series drawn as a thin stem and a dot. Dumbbell
+compares exactly two named series per category (e.g. before vs after) as two
+dots joined by a stem. Range_area needs a `low`/`high` bound per point instead
+of a single `y`, for an uncertainty band or min/max range. Pareto is a single
+nonnegative series, ranked descending with a cumulative-percentage line
+overlaid on a second axis. Waterfall is a single series of signed deltas from
+the previous running total, not absolute values. Funnel/pyramid are a single
+nonnegative name/value set rendered with ECharts' native funnel series, sorted
+descending or ascending. Themes: default, minimal, presentation, high_contrast.
+Appearance: auto, light, dark. Use numeric x/y points for scatter. `auto`
+follows the device's color-scheme setting; a host can supply an explicit
+appearance to match app settings.
 
 ## Package entry points
 

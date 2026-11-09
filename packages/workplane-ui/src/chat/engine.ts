@@ -1,9 +1,9 @@
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, TooltipComponent, AriaComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
 import { validateChatChart, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries } from './contract.js';
-echarts.use([BarChart, LineChart, PieChart, ScatterChart, GridComponent, LegendComponent, TooltipComponent, AriaComponent, SVGRenderer]);
+echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, GridComponent, LegendComponent, TooltipComponent, AriaComponent, SVGRenderer]);
 const palettes = {
   default: ['#2563eb', '#059669', '#d97706', '#9333ea', '#e11d48', '#0891b2'],
   minimal: ['#475569', '#64748b', '#94a3b8', '#334155', '#0f766e', '#9a3412'],
@@ -16,6 +16,10 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
   const categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
   const type = payload.chart_type;
   const pie = type === 'pie' || type === 'donut';
+  // Funnel/pyramid share the pie branch below: both are a single ranked set
+  // of nonnegative name/value slices with no cartesian axes, differing only
+  // in the native ECharts `sort` direction.
+  const funnel = type === 'funnel' || type === 'pyramid';
   // The 100% variants reuse the stacked_* rendering below; only the values
   // they stack differ, so they are a data transform, not a new series shape.
   const percent = type === 'stacked_bar_100' || type === 'stacked_area_100';
@@ -29,15 +33,18 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
     aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
-    tooltip: { trigger: pie || type === 'scatter' ? 'item' : 'axis', renderMode: 'richText', confine: true },
-    legend: { show: !sparkline && (pie || series.length > 1), type: 'scroll', bottom: 0, textStyle: { color: text } },
+    tooltip: { trigger: pie || funnel || type === 'scatter' ? 'item' : 'axis', renderMode: 'richText', confine: true },
+    legend: { show: !sparkline && (pie || funnel || series.length > 1), type: 'scroll', bottom: 0, textStyle: { color: text } },
     grid: sparkline ? { left: 2, right: 2, top: 2, bottom: 2 } : { left: 60, right: 24, top: 24, bottom: 65, containLabel: true },
   };
-  if (pie) {
+  if (pie || funnel) {
     const data = multi ? series.map(s => ({ name: s.name, value: s.points.reduce((sum, p) => sum + p.y, 0) }))
       : series[0]!.points.map(p => ({ name: String(p.x), value: p.y }));
-    option.series = [{ type: 'pie', radius: type === 'donut' ? ['42%', '68%'] : '68%', data,
-      label: { color: text }, top: 10, bottom: 25 }];
+    option.series = funnel
+      ? [{ type: 'funnel', sort: type === 'pyramid' ? 'ascending' : 'descending', data, label: { color: text },
+          left: '10%', right: '10%', top: 10, bottom: 25,
+          itemStyle: { borderColor: dark ? '#0f172a' : '#ffffff', borderWidth: 1 } }]
+      : [{ type: 'pie', radius: type === 'donut' ? ['42%', '68%'] : '68%', data, label: { color: text }, top: 10, bottom: 25 }];
     return option;
   }
   const categoryAxis = { type: 'category', data: categories, name: sparkline ? undefined : payload.x_label,
@@ -93,6 +100,47 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.series = [
       { name: s.name, type: 'bar', barWidth: 3, itemStyle: { color: color[0], opacity: 0.6 }, data: values, tooltip: { show: false }, silent: true },
       { name: s.name, type: 'scatter', symbolSize: 14, itemStyle: { color: color[0] }, data: values },
+    ];
+    return option;
+  }
+  if (type === 'waterfall') {
+    // Validated to be exactly one series: a sequence of signed deltas from
+    // the previous running total, in category order (not resorted).
+    const s = series[0]!;
+    const values = categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? 0);
+    let running = 0;
+    const bars = values.map(delta => { const prev = running; running += delta; return { prev, delta }; });
+    const base = bars.map(b => Math.min(b.prev, b.prev + b.delta));
+    const span = bars.map(b => ({ value: Math.abs(b.delta),
+      itemStyle: { color: b.delta >= 0 ? color[0] : (color[1] ?? color[0]) } }));
+    option.legend = { show: false };
+    option.series = [
+      // Same invisible-base-plus-band trick as range_area/dumbbell, but the
+      // base tracks the running total rather than a fixed low bound.
+      { name: 'base', type: 'bar', stack: 'waterfall', stackStrategy: 'all', itemStyle: { opacity: 0 }, data: base, tooltip: { show: false }, silent: true },
+      { name: s.name, type: 'bar', stack: 'waterfall', stackStrategy: 'all', data: span },
+    ];
+    return option;
+  }
+  if (type === 'pareto') {
+    // Validated to be exactly one nonnegative series. A copy is sorted by
+    // value; the input itself is never mutated or reordered.
+    const s = series[0]!;
+    const sorted = [...s.points].sort((a, b) => b.y - a.y);
+    const total = sorted.reduce((sum, p) => sum + p.y, 0);
+    let running = 0;
+    const cumulative = sorted.map(p => { running += p.y; return total === 0 ? 0 : (running / total) * 100; });
+    option.xAxis = { type: 'category', data: sorted.map(p => String(p.x)), name: payload.x_label,
+      axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
+    option.yAxis = [
+      { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } },
+      { type: 'value', min: 0, max: 100, axisLabel: { color: text, formatter: '{value}%' }, splitLine: { show: false } },
+    ];
+    option.legend = { show: false };
+    option.series = [
+      { name: s.name, type: 'bar', data: sorted.map(p => p.y), itemStyle: { color: color[0] } },
+      { name: 'Cumulative %', type: 'line', yAxisIndex: 1, data: cumulative, symbol: 'circle',
+        lineStyle: { color: color[1 % color.length] } },
     ];
     return option;
   }

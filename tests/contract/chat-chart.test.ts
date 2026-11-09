@@ -99,6 +99,41 @@ describe('portable chat chart contract', () => {
     expect(series[1].type).toBe('scatter');
     expect(series[1].data).toEqual([5,9]);
   });
+  it('rejects negative values and more than one series for pareto and waterfall where that applies', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pareto',series:[{label:'A',value:-1}]})).toBeNull();
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pareto',series:[{name:'a',points:[{x:'X',y:1}]},{name:'b',points:[{x:'X',y:2}]}]})).toBeNull();
+    // Waterfall deltas may be negative (a decrease); only the series count is constrained.
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'waterfall',series:[{label:'A',value:-1}]})).not.toBeNull();
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'waterfall',series:[{name:'a',points:[{x:'X',y:1}]},{name:'b',points:[{x:'X',y:2}]}]})).toBeNull();
+  });
+  it('ranks pareto bars by value and overlays an exact cumulative percentage, without reordering the input', () => {
+    const payload={schema_version:'bahulam_render_v1',type:'chart',chart_type:'pareto',series:[{label:'small',value:1},{label:'big',value:3}]};
+    const before=JSON.stringify(payload);
+    const chart=validateChatChart(payload)!;
+    const option=chartOption(chart);
+    expect((option.xAxis as any).data).toEqual(['big','small']); // sorted descending for display
+    const series=option.series as any[];
+    expect(series[0].data).toEqual([3,1]);
+    expect(series[1].data).toEqual([75,100]);
+    expect((option.yAxis as any[])[1].max).toBe(100);
+    expect(JSON.stringify(payload)).toBe(before); // input order untouched
+  });
+  it('floats waterfall bars from the running total and colors increases and decreases differently', () => {
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'waterfall',series:[
+      {label:'start',value:10},{label:'drop',value:-4},{label:'rise',value:6}]});
+    const option=chartOption(chart!);
+    const series=option.series as any[];
+    expect(series[0].data).toEqual([0,6,6]); // base: running total before each delta (clamped to the lower edge)
+    expect(series[1].data.map((d:any)=>d.value)).toEqual([10,4,6]);
+    expect(series[1].data[1].itemStyle.color).not.toBe(series[1].data[0].itemStyle.color); // drop vs rise
+  });
+  it('rejects a negative funnel/pyramid value and draws a native funnel series sorted by direction', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'funnel',series:[{label:'A',value:-1}]})).toBeNull();
+    const funnel=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'funnel',series:[{label:'A',value:5},{label:'B',value:2}]});
+    expect((chartOption(funnel!).series as any[])[0]).toMatchObject({ type: 'funnel', sort: 'descending' });
+    const pyramid=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pyramid',series:[{label:'A',value:5},{label:'B',value:2}]});
+    expect((chartOption(pyramid!).series as any[])[0]).toMatchObject({ type: 'funnel', sort: 'ascending' });
+  });
 });
 
 describe('adoption safeguards', () => {

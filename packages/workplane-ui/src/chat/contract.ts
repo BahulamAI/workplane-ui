@@ -1,6 +1,6 @@
 /** Portable, data-only chat chart contract. No React, DOM or execution code. */
 export const CHART_CONTRACT_VERSION = 'workplane.chat-chart/1' as const;
-export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'scatter'] as const;
+export const CHART_TYPES = ['bar', 'horizontal_bar', 'lollipop', 'dumbbell', 'stacked_bar', 'stacked_bar_100', 'line', 'area', 'step_line', 'range_area', 'stacked_area', 'stacked_area_100', 'sparkline', 'pie', 'donut', 'pareto', 'waterfall', 'funnel', 'pyramid', 'scatter'] as const;
 export const CHART_THEMES = ['default', 'minimal', 'presentation', 'high_contrast'] as const;
 export const chatChartHeight = (type: string): number => type === 'sparkline' ? 120 : 340;
 export type ChartType = typeof CHART_TYPES[number];
@@ -38,10 +38,13 @@ export const chartToolSchema = {
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
   },
   allOf: [{
-    if: { properties: { chart_type: { enum: ['stacked_bar_100', 'stacked_area_100'] } }, required: ['chart_type'] },
+    if: { properties: { chart_type: { enum: ['stacked_bar_100', 'stacked_area_100', 'pareto', 'funnel', 'pyramid'] } }, required: ['chart_type'] },
     then: { properties: { series: { items: { properties: {
       value: { minimum: 0 }, points: { items: { properties: { y: { minimum: 0 } } } },
     } } } } },
+  }, {
+    if: { properties: { chart_type: { enum: ['pareto', 'waterfall'] } }, required: ['chart_type'] },
+    then: { properties: { series: { anyOf: [{ items: point }, { maxItems: 1, items: multi }] } } },
   }, {
     if: { properties: { chart_type: { const: 'range_area' } }, required: ['chart_type'] },
     then: { properties: { series: { maxItems: 12, items: rangeMulti } } },
@@ -67,6 +70,9 @@ export const chartCatalog = {
     { types: ['stacked_bar_100', 'stacked_area_100'], purpose: 'Show what share each nonnegative series contributes to a total, normalized to 100% so proportions are comparable across categories of different absolute size.', status: 'supported' },
     { types: ['sparkline'], purpose: 'Show a trend at a glance with no axes or legend; for inline/compact scanning, not precise reading.', status: 'supported' },
     { types: ['pie', 'donut'], purpose: 'Show nonnegative parts of a whole, preferably 2–6 categories.', status: 'supported' },
+    { types: ['pareto'], purpose: 'Rank nonnegative categories by contribution and overlay cumulative percentage to find the vital few; single series only.', status: 'supported' },
+    { types: ['waterfall'], purpose: 'Show a running total through a sequence of signed increases and decreases; single series where each point is a delta from the previous total, not an absolute value.', status: 'supported' },
+    { types: ['funnel', 'pyramid'], purpose: 'Show a nonnegative quantity narrowing (funnel) or widening (pyramid) through ordered stages.', status: 'supported' },
     { types: ['scatter'], purpose: 'Show relationships between two numeric measurements; use numeric x/y points.', status: 'supported' },
   ],
   limits: { max_points: 2000, max_series: 12, max_bytes: 64000 },
@@ -88,6 +94,9 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   const isMulti = typeof p.series[0]?.name === 'string';
   if (isMulti && p.series.length > 12) return null;
   const percent = p.chart_type === 'stacked_bar_100' || p.chart_type === 'stacked_area_100';
+  // Parts-of-a-whole semantics: a negative contribution has no meaning for a
+  // percentage, a Pareto ranking, or a funnel/pyramid stage.
+  const nonnegative = percent || p.chart_type === 'pareto' || p.chart_type === 'funnel' || p.chart_type === 'pyramid';
   // range_area's points carry low/high instead of y; it is always the named
   // multi-series wrapper, never the plain {label, value} shape.
   const isInterval = p.chart_type === 'range_area';
@@ -96,6 +105,9 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   // with a lighter weight, so a named-series lollipop can only be the one.
   if (p.chart_type === 'dumbbell' && (!isMulti || p.series.length !== 2)) return null;
   if (p.chart_type === 'lollipop' && isMulti && p.series.length !== 1) return null;
+  // Pareto ranks one measure; waterfall is one sequence of deltas. Neither
+  // compares named series the way stacked/dumbbell charts do.
+  if ((p.chart_type === 'pareto' || p.chart_type === 'waterfall') && isMulti && p.series.length !== 1) return null;
   let count = 0;
   const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
   const label = (s: unknown) => typeof s === 'string' && s.length <= 300;
@@ -109,14 +121,14 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
           if (Object.keys(q).some(k => !['x', 'low', 'high'].includes(k)) || !(label(q.x) || finite(q.x)) || !finite(q.low) || !finite(q.high) || q.low > q.high || !finite(q.high - q.low)) return null;
         } else {
           if (Object.keys(q).some(k => !['x', 'y'].includes(k)) || !(label(q.x) || finite(q.x)) || !finite(q.y)) return null;
-          if (percent && q.y < 0) return null;
+          if (nonnegative && q.y < 0) return null;
           if (p.chart_type === 'scatter' && !finite(q.x)) return null;
         }
         count++;
       }
     } else {
       if (!label(item.label) || !finite(item.value) || Object.keys(item).some(k => !['label', 'value'].includes(k))) return null;
-      if (percent && item.value < 0) return null;
+      if (nonnegative && item.value < 0) return null;
       count++;
     }
   }
