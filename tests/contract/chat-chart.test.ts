@@ -134,6 +134,27 @@ describe('portable chat chart contract', () => {
     const pyramid=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'pyramid',series:[{label:'A',value:5},{label:'B',value:2}]});
     expect((chartOption(pyramid!).series as any[])[0]).toMatchObject({ type: 'funnel', sort: 'ascending' });
   });
+  it('rejects a negative rose value and draws a radius-scaled pie', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'rose',series:[{label:'A',value:-1}]})).toBeNull();
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'rose',series:[{label:'A',value:5},{label:'B',value:2}]});
+    const series=(chartOption(chart!).series as any[])[0];
+    expect(series).toMatchObject({ type: 'pie', roseType: 'radius' });
+    expect(series.data).toEqual([{name:'A',value:5},{name:'B',value:2}]);
+  });
+  it('rejects a negative waffle value and allocates exactly 100 squares by largest remainder', () => {
+    expect(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'waffle',series:[{label:'A',value:-1}]})).toBeNull();
+    // 1/3, 1/3, 1/3 of 100 -> 33.33 each; largest-remainder gives one extra
+    // square to the earliest ties so the three counts still sum to 100.
+    const chart=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'waffle',series:[
+      {label:'A',value:1},{label:'B',value:1},{label:'C',value:1}]});
+    const series=chartOption(chart!).series as any[];
+    const counts=series.map(s=>s.data.length);
+    expect(counts.reduce((a,b)=>a+b,0)).toBe(100);
+    expect(counts).toEqual([34,33,33]);
+    // Squares tile the 10-column grid with no gaps and no overlap.
+    const allCells=series.flatMap(s=>s.data.map((c:number[])=>c.join(',')));
+    expect(new Set(allCells).size).toBe(100);
+  });
 });
 
 describe('adoption safeguards', () => {

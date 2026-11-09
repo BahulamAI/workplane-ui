@@ -10,12 +10,28 @@ const palettes = {
   presentation: ['#7c3aed', '#0891b2', '#e11d48', '#d97706', '#059669', '#2563eb'],
   high_contrast: ['#0072b2', '#d55e00', '#009e73', '#cc79a7', '#e69f00', '#000000'],
 };
+/**
+ * Largest-remainder (Hamilton) apportionment: splits `squares` units across
+ * `values` in exact proportion to each value's share of `total`, rounding so
+ * the counts always sum to exactly `squares` rather than drifting from plain
+ * per-value rounding. Deterministic; ties go to the earlier value.
+ */
+function allocateSquares(values: number[], total: number, squares: number): number[] {
+  if (total <= 0) return values.map(() => 0);
+  const raw = values.map(v => (v / total) * squares);
+  const floors = raw.map(Math.floor);
+  const remainders = raw.map((r, i) => ({ i, frac: r - floors[i]! })).sort((a, b) => b.frac - a.frac);
+  const result = [...floors];
+  let used = floors.reduce((sum, f) => sum + f, 0);
+  for (let k = 0; used < squares && k < remainders.length; k++, used++) result[remainders[k]!.i]!++;
+  return result;
+}
 export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
   const multi = 'name' in payload.series[0]!;
   const series = multi ? payload.series as ChartSeries[] : [{ name: payload.title || 'Value', points: (payload.series as ChartPoint[]).map(p => ({ x: p.label, y: p.value })) }];
   const categories = [...new Set(series.flatMap(s => s.points.map(p => String(p.x))))];
   const type = payload.chart_type;
-  const pie = type === 'pie' || type === 'donut';
+  const pie = type === 'pie' || type === 'donut' || type === 'rose';
   // Funnel/pyramid share the pie branch below: both are a single ranked set
   // of nonnegative name/value slices with no cartesian axes, differing only
   // in the native ECharts `sort` direction.
@@ -33,7 +49,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
     aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
-    tooltip: { trigger: pie || funnel || type === 'scatter' ? 'item' : 'axis', renderMode: 'richText', confine: true },
+    tooltip: { trigger: pie || funnel || type === 'scatter' || type === 'waffle' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     legend: { show: !sparkline && (pie || funnel || series.length > 1), type: 'scroll', bottom: 0, textStyle: { color: text } },
     grid: sparkline ? { left: 2, right: 2, top: 2, bottom: 2 } : { left: 60, right: 24, top: 24, bottom: 65, containLabel: true },
   };
@@ -44,7 +60,28 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       ? [{ type: 'funnel', sort: type === 'pyramid' ? 'ascending' : 'descending', data, label: { color: text },
           left: '10%', right: '10%', top: 10, bottom: 25,
           itemStyle: { borderColor: dark ? '#0f172a' : '#ffffff', borderWidth: 1 } }]
-      : [{ type: 'pie', radius: type === 'donut' ? ['42%', '68%'] : '68%', data, label: { color: text }, top: 10, bottom: 25 }];
+      : [{ type: 'pie', radius: type === 'donut' ? ['42%', '68%'] : '68%', ...(type === 'rose' ? { roseType: 'radius' } : {}),
+          data, label: { color: text }, top: 10, bottom: 25 }];
+    return option;
+  }
+  if (type === 'waffle') {
+    // Reuses pie's own data extraction: one value per named series (summed
+    // across its points) or one value per simple-shape point.
+    const names = multi ? series.map(s => s.name) : series[0]!.points.map(p => String(p.x));
+    const values = multi ? series.map(s => s.points.reduce((sum, p) => sum + p.y, 0)) : series[0]!.points.map(p => p.y);
+    const total = values.reduce((sum, v) => sum + v, 0);
+    const cols = 10, squares = 100;
+    const counts = allocateSquares(values, total, squares);
+    option.xAxis = { type: 'value', min: -0.5, max: cols - 0.5, show: false };
+    option.yAxis = { type: 'value', min: -0.5, max: Math.ceil(squares / cols) - 0.5, show: false, inverse: true };
+    option.grid = { left: 10, right: 10, top: 10, bottom: 40, containLabel: false };
+    option.legend = { show: true, type: 'scroll', bottom: 0, textStyle: { color: text }, data: names };
+    let cursor = 0;
+    option.series = names.map((name, i) => {
+      const cells: [number, number][] = [];
+      for (let k = 0; k < counts[i]!; k++, cursor++) cells.push([cursor % cols, Math.floor(cursor / cols)]);
+      return { name, type: 'scatter', symbol: 'rect', symbolSize: 16, itemStyle: { color: color[i % color.length] }, data: cells };
+    });
     return option;
   }
   const categoryAxis = { type: 'category', data: categories, name: sparkline ? undefined : payload.x_label,

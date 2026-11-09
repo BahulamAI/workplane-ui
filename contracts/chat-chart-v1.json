@@ -79,6 +79,28 @@
     },
     {
       "types": [
+        "pareto"
+      ],
+      "purpose": "Rank nonnegative categories by contribution and overlay cumulative percentage to find the vital few; single series only.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "waterfall"
+      ],
+      "purpose": "Show a running total through a sequence of signed increases and decreases; single series where each point is a delta from the previous total, not an absolute value.",
+      "status": "supported"
+    },
+    {
+      "types": [
+        "funnel",
+        "pyramid"
+      ],
+      "purpose": "Show a nonnegative quantity narrowing (funnel) or widening (pyramid) through ordered stages.",
+      "status": "supported"
+    },
+    {
+      "types": [
         "scatter"
       ],
       "purpose": "Show relationships between two numeric measurements; use numeric x/y points.",
@@ -117,6 +139,10 @@
           "sparkline",
           "pie",
           "donut",
+          "pareto",
+          "waterfall",
+          "funnel",
+          "pyramid",
           "scatter"
         ]
       },
@@ -281,7 +307,10 @@
             "chart_type": {
               "enum": [
                 "stacked_bar_100",
-                "stacked_area_100"
+                "stacked_area_100",
+                "pareto",
+                "funnel",
+                "pyramid"
               ]
             }
           },
@@ -308,6 +337,94 @@
                   }
                 }
               }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "chart_type": {
+              "enum": [
+                "pareto",
+                "waterfall"
+              ]
+            }
+          },
+          "required": [
+            "chart_type"
+          ]
+        },
+        "then": {
+          "properties": {
+            "series": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                {
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "points"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "points": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "properties": {
+                            "x": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
             }
           }
         }
