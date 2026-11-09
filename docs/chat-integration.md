@@ -168,6 +168,48 @@ light, dark. Use numeric x/y points for scatter. `auto` follows the device's
 color-scheme setting; a host can supply an explicit appearance to match app
 settings.
 
+## Style, palette, accessibility and density
+
+Per the plan's "appearance is independent of data semantics": a single
+`theme` string must not also carry spacing and accessibility meaning, so
+these are independent, optional top-level fields rather than more `theme`
+values.
+
+`density`: `compact` | `comfortable` (default) | `presentation`. Scales grid
+padding and label/legend font size only — never which data is shown, and
+never applied when absent, so every existing payload renders identically to
+before this field existed.
+
+`accessibility`: `{ high_contrast?, patterns?, reduced_motion?: boolean }`.
+`high_contrast` selects the high_contrast palette without requiring
+`theme: 'high_contrast'` specifically — it is read once, at the top of the
+renderer, into the same `color` array every chart_type branch already reads
+from, including the many that bake a color straight into a data point
+(bubble, gauge, gantt, …) rather than relying on ECharts' own palette
+cycling; a later post-processing pass over the built option could never
+reach those. `patterns` turns on decal fill patterns (for color-vision
+safety) independent of the palette. `reduced_motion` overrides the OS-level
+`prefers-reduced-motion` signal in either direction; left unset, the OS
+signal still applies as before.
+
+Series-to-color assignment is stable by series *name* (a hash into the
+palette), not by its position in the array — a series keeps its color if a
+sibling is added, removed or reordered between renders, so "the Revenue
+line is blue" stays true rather than shifting when the agent happens to
+list series in a different order.
+
+The plan's broader visual-style system (flat/minimalism/skeuomorphism/
+glassmorphism/neumorphism/claymorphism/material/outlined/editorial/
+technical/hand-drawn/brutalist, twelve options in total) is intentionally
+not implemented here. Several of those — glass, neumorphism, skeuomorphism,
+claymorphism, hand-drawn — are exactly what the plan itself warns against:
+styles that risk creating misleading pseudo-3D marks or diminishing
+contrast. Applying any of them consistently would mean a transform reaching
+into the ~50 chart_type branches' heterogeneous series shapes, which is
+precisely the kind of change this test suite cannot verify, since it
+inspects the built option object, never real rendering. Revisit if there's
+a concrete need and a way to verify each style actually renders safely.
+
 ## Package entry points
 
 - `@bahulam/workplane-ui/chat`: headless TypeScript contract, validator and catalogue.
@@ -211,3 +253,14 @@ legacy payloads, invalid data and multi-series alignment. The backend consumes t
 exported schema and adds semantic limits. Keep Python and TS contract fixtures in
 agreement when adding types. Actual native iOS/Android WebView and packaged desktop
 smoke tests are still required for a release, in addition to browser validation.
+
+
+### Portable charts in Workplane documents
+
+A `workplane.echarts` document block can use `{ presentation: payload }`, where
+`payload` is the same validated `bahulam_render_v1` chart used in chat. All 50
+core types reuse the chat engine, themes, data shapes, and saved JSON. The legacy
+`option` and query `bind` format remains supported unchanged. Portable presentations
+contain inline data; mixing them with legacy query bindings is rejected rather than
+silently ignoring a binding. Agent discovery lists supported chart types; deferred
+types and separate renderer families are advertised separately in the chat catalogue.

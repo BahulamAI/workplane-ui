@@ -510,3 +510,77 @@ it('keeps dumbbell stems connected across zero', () => {
   expect(series[1].stackStrategy).toBe('all');
   expect(series[1].data).toEqual([8]);
 });
+
+describe('style, palette, accessibility and density', () => {
+  const bar=(extra: object)=>({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+    series:[{label:'A',value:5},{label:'B',value:9}],...extra});
+
+  it('rejects an invalid density or an accessibility field of the wrong shape', () => {
+    expect(validateChatChart(bar({density:'cozy'}))).toBeNull();
+    expect(validateChatChart(bar({accessibility:{high_contrast:'yes'}}))).toBeNull();
+    expect(validateChatChart(bar({accessibility:{unknown_flag:true}}))).toBeNull();
+    expect(validateChatChart(bar({density:'compact',accessibility:{patterns:true}}))).not.toBeNull();
+  });
+
+  it('applies accessibility.high_contrast as the palette even without theme: high_contrast, reaching series that bake their own color', () => {
+    // bubble bakes itemStyle.color directly per point rather than relying on
+    // ECharts' own `option.color` cycling, so this exercises the case a
+    // naive post-process over the built option could never reach.
+    const plain=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bubble',
+      series:[{name:'one',points:[{x:1,y:1,size:1}]}]});
+    const hc=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bubble',
+      series:[{name:'one',points:[{x:1,y:1,size:1}]}],accessibility:{high_contrast:true}});
+    const plainColor=(chartOption(plain!).series as any[])[0].itemStyle.color;
+    const hcColor=(chartOption(hc!).series as any[])[0].itemStyle.color;
+    expect(hcColor).not.toBe(plainColor);
+    // The high_contrast palette itself, read off a plain theme:'high_contrast'
+    // chart (same palette, reached the ordinary way) rather than hardcoding it.
+    const highContrastPalette=chartOption(validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'bar',
+      series:[{label:'A',value:1}],theme:'high_contrast'})!).color as string[];
+    expect(highContrastPalette).toContain(hcColor);
+    expect(highContrastPalette).not.toContain(plainColor);
+  });
+
+  it('turns on decal patterns independent of high_contrast, and lets reduced_motion override either way', () => {
+    const chart=validateChatChart(bar({accessibility:{patterns:true}}));
+    const option=chartOption(chart!) as any;
+    expect(option.aria.decal.show).toBe(true);
+    const forcedOn=validateChatChart(bar({accessibility:{reduced_motion:true}}));
+    expect((chartOption(forcedOn!) as any).animation).toBe(false);
+    const forcedOff=validateChatChart(bar({accessibility:{reduced_motion:false}}));
+    expect((chartOption(forcedOff!) as any).animation).toBe(true);
+  });
+
+  it('leaves the option unchanged when density is absent or comfortable (the default)', () => {
+    const noDensity=chartOption(validateChatChart(bar({}))!);
+    const comfortable=chartOption(validateChatChart(bar({density:'comfortable'}))!);
+    expect(comfortable).toEqual(noDensity);
+  });
+
+  it('scales grid padding and text size with density, without touching the data', () => {
+    const plain=validateChatChart(bar({}))!;
+    const compact=validateChatChart(bar({density:'compact'}))!;
+    const presentation=validateChatChart(bar({density:'presentation'}))!;
+    const plainOpt=chartOption(plain) as any;
+    const compactOpt=chartOption(compact) as any;
+    const presentationOpt=chartOption(presentation) as any;
+    expect(compactOpt.grid.left).toBeLessThan(plainOpt.grid.left);
+    expect(presentationOpt.grid.left).toBeGreaterThan(plainOpt.grid.left);
+    expect(compactOpt.textStyle.fontSize).toBeLessThan(presentationOpt.textStyle.fontSize);
+    // Same series data at every density — density is spacing/size only.
+    expect(compactOpt.series).toEqual(plainOpt.series);
+  });
+
+  it('assigns the same series a stable color regardless of its position among its siblings', () => {
+    const forward=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'line',
+      series:[{name:'Revenue',points:[{x:'A',y:1}]},{name:'Cost',points:[{x:'A',y:2}]}]});
+    const reversed=validateChatChart({schema_version:'bahulam_render_v1',type:'chart',chart_type:'line',
+      series:[{name:'Cost',points:[{x:'A',y:2}]},{name:'Revenue',points:[{x:'A',y:1}]}]});
+    const forwardSeries=(chartOption(forward!).series as any[]);
+    const reversedSeries=(chartOption(reversed!).series as any[]);
+    const colorOf=(series:any[],name:string)=>series.find(s=>s.name===name).itemStyle.color;
+    expect(colorOf(forwardSeries,'Revenue')).toBe(colorOf(reversedSeries,'Revenue'));
+    expect(colorOf(forwardSeries,'Cost')).toBe(colorOf(reversedSeries,'Cost'));
+    expect(colorOf(forwardSeries,'Revenue')).not.toBe(colorOf(forwardSeries,'Cost'));
+  });
+});

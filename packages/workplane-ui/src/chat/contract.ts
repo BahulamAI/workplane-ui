@@ -59,11 +59,24 @@ export interface GraphSeries {
   nodes: { id: string; name?: string; value?: number; category?: string }[];
   links: { source: string; target: string; value?: number }[];
 }
+// Density controls spacing, font/symbol size and label thresholds — never
+// which data is shown. Independent of theme (palette) and appearance
+// (light/dark), per the plan's "appearance is independent of data
+// semantics": a theme string must not also carry spacing and a11y meaning.
+export const DENSITIES = ['compact', 'comfortable', 'presentation'] as const;
+export type Density = typeof DENSITIES[number];
+// Each flag is independent of `theme`: `high_contrast` no longer requires
+// picking the high_contrast theme, `patterns` (decal fills, for
+// color-vision-safety) can be turned on with any palette, and
+// `reduced_motion` can override the OS-level prefers-reduced-motion signal
+// in either direction.
+export interface AccessibilityOptions { high_contrast?: boolean; patterns?: boolean; reduced_motion?: boolean }
 export interface ChatChartPresentation {
   schema_version: 'bahulam_render_v1'; type: 'chart';
   chart_type: ChartType; title?: string; x_label?: string; y_label?: string;
   series: ChartPoint[] | ChartSeries[] | IntervalSeries[] | SampleSeries[] | BubbleSeries[] | TargetSeries[] | HeatmapSeries[] | OhlcSeries[] | IntervalItem[] | HierarchyNode[] | GraphSeries[]; observations?: string[];
   theme?: ChartTheme; appearance?: 'auto' | 'light' | 'dark';
+  density?: Density; accessibility?: AccessibilityOptions;
   contract_version?: typeof CHART_CONTRACT_VERSION;
 }
 const text = { type: 'string', maxLength: 300 };
@@ -142,6 +155,10 @@ export const chartToolSchema = {
     series: { type: 'array', minItems: 1, maxItems: 500, items: { anyOf: [point, multi, rangeMulti, sample, bubbleMulti, targetItem, heatmapMulti, ohlcMulti, intervalItem, hierarchyNode, graphSeries] } },
     observations: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 1000 } },
     theme: { type: 'string', enum: CHART_THEMES }, appearance: { type: 'string', enum: ['auto', 'light', 'dark'] },
+    density: { type: 'string', enum: DENSITIES },
+    accessibility: { type: 'object', additionalProperties: false, properties: {
+      high_contrast: { type: 'boolean' }, patterns: { type: 'boolean' }, reduced_motion: { type: 'boolean' },
+    } },
   },
   allOf: [{
     if: { properties: { chart_type: { not: { enum: ['range_area', 'error_bar', 'bubble', 'heatmap', 'candlestick', 'gantt', ...SAMPLE_CHART_TYPES, ...TARGET_CHART_TYPES, ...HIERARCHY_CHART_TYPES, ...NETWORK_CHART_TYPES] } } }, required: ['chart_type'] },
@@ -201,6 +218,9 @@ export const chartToolSchema = {
 export const chartCatalog = {
   contract_version: CHART_CONTRACT_VERSION,
   renderer: 'workplane.echarts.chat', themes: CHART_THEMES,
+  aliases: { alluvial: 'sankey' },
+  deferred_types: ['marimekko', 'violin', 'icicle', 'circle_packing', 'chord'],
+  separate_renderer_families: ['Geography', 'Scientific/specialist'],
   presentations: [
     { types: ['bar', 'horizontal_bar'], purpose: 'Compare categories; use horizontal bars for long labels.', status: 'supported' },
     { types: ['lollipop'], purpose: 'Compare categories with a lighter visual weight than full bars; single series only.', status: 'supported' },
@@ -259,6 +279,15 @@ export function validateChatChart(value: unknown): ChatChartPresentation | null 
   for (const key of ['title', 'x_label', 'y_label']) if (p[key] !== undefined && (typeof p[key] !== 'string' || p[key].length > 300)) return null;
   if (p.theme !== undefined && !CHART_THEMES.includes(p.theme as ChartTheme)) return null;
   if (p.appearance !== undefined && !['auto', 'light', 'dark'].includes(p.appearance as string)) return null;
+  if (p.density !== undefined && !DENSITIES.includes(p.density as Density)) return null;
+  if (p.accessibility !== undefined) {
+    if (!p.accessibility || typeof p.accessibility !== 'object' || Array.isArray(p.accessibility)) return null;
+    const a = p.accessibility as Record<string, unknown>;
+    if (Object.keys(a).some(k => !['high_contrast', 'patterns', 'reduced_motion'].includes(k))) return null;
+    for (const key of ['high_contrast', 'patterns', 'reduced_motion']) {
+      if (a[key] !== undefined && typeof a[key] !== 'boolean') return null;
+    }
+  }
   if (p.observations !== undefined && (!Array.isArray(p.observations) || p.observations.length > 6 || p.observations.some(x => typeof x !== 'string' || x.length > 1000))) return null;
   if (!Array.isArray(p.series) || !p.series.length || p.series.length > 500) return null;
   const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);

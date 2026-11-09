@@ -2,7 +2,7 @@ import * as echarts from 'echarts/core';
 import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart, TreemapChart, SunburstChart, TreeChart, SankeyChart, GraphChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem, type HierarchyNode, type GraphSeries } from './contract.js';
+import { validateChatChart, SAMPLE_CHART_TYPES, TARGET_CHART_TYPES, HIERARCHY_CHART_TYPES, NETWORK_CHART_TYPES, type ChatChartPresentation, type ChartSeries, type ChartPoint, type IntervalSeries, type SampleSeries, type BubbleSeries, type TargetSeries, type HeatmapSeries, type OhlcSeries, type IntervalItem, type HierarchyNode, type GraphSeries, type Density } from './contract.js';
 echarts.use([BarChart, LineChart, PieChart, ScatterChart, FunnelChart, BoxplotChart, HeatmapChart, ParallelChart, GaugeChart, RadarChart, CandlestickChart, TreemapChart, SunburstChart, TreeChart, SankeyChart, GraphChart,
   GridComponent, LegendComponent, TooltipComponent, AriaComponent, ParallelComponent, RadarComponent, PolarComponent, MarkAreaComponent, MarkPointComponent, CalendarComponent, SVGRenderer]);
 const palettes = {
@@ -68,6 +68,18 @@ function hexToRgb(hex: string): number[] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 /**
+ * Stable series-to-color assignment: the same series name always lands on
+ * the same palette slot, regardless of how many other series are present
+ * or what order they arrive in — unlike `color[i % color.length]`, where a
+ * series's color silently shifts if a sibling is added, removed or
+ * reordered between renders of what a reader expects to be "the same line".
+ */
+function colorForName(name: string, palette: string[]): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return palette[hash % palette.length]!;
+}
+/**
  * Deterministic beeswarm jitter: bins values the same way the histogram
  * transform does, then spreads each bin's points symmetrically around the
  * lane center in input order. No randomness, no collision search.
@@ -87,21 +99,31 @@ function beeswarmOffsets(values: number[], step = 0.06): number[] {
     return (k - (counts.get(b)! - 1) / 2) * step;
   });
 }
-export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
+function chartOptionImpl(payload: ChatChartPresentation, dark: boolean): echarts.EChartsCoreOption {
   const type = payload.chart_type;
   const text = dark ? '#e2e8f0' : '#334155';
   const grid = dark ? '#334155' : '#e2e8f0';
-  const color = [...palettes[payload.theme || 'default']];
-  if (dark && payload.theme === 'high_contrast') color[color.length - 1] = '#ffffff';
+  // Accessibility flags are independent of `theme`: `high_contrast` reaches
+  // every branch through this single computed palette/decal/motion set,
+  // rather than needing each of the ~10 option-construction sites below to
+  // know about `payload.accessibility` itself — including the branches that
+  // bake a color straight into a data point rather than reading it back off
+  // `option.color`, which a post-processing pass could never reach.
+  const highContrast = !!payload.accessibility?.high_contrast || payload.theme === 'high_contrast';
+  const patterns = highContrast || !!payload.accessibility?.patterns;
+  const reducedMotion = payload.accessibility?.reduced_motion
+    ?? (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+  const color = [...palettes[highContrast ? 'high_contrast' : (payload.theme || 'default')]];
+  if (dark && highContrast) color[color.length - 1] = '#ffffff';
   // Raw samples ({name, values: number[]}) are a different shape entirely —
   // no `.points` — so they are handled before any of the point-shape logic
   // below ever looks at payload.series.
   if ((SAMPLE_CHART_TYPES as readonly string[]).includes(type)) {
     const samples = payload.series as SampleSeries[];
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: type === 'strip_plot' || type === 'beeswarm' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     };
     if (type === 'histogram') {
@@ -142,8 +164,8 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       option.legend = { show: samples.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: samples.map(s => s.name) };
       option.series = samples.map((s, i) => {
         const ys = gaussianKde(s.values, xs);
-        return { name: s.name, type: 'line', smooth: true, symbol: 'none', lineStyle: { color: color[i % color.length] },
-          areaStyle: { color: color[i % color.length], opacity: 0.15 }, data: xs.map((x, k) => [x, ys[k]]) };
+        return { name: s.name, type: 'line', smooth: true, symbol: 'none', lineStyle: { color: colorForName(s.name, color) },
+          areaStyle: { color: colorForName(s.name, color), opacity: 0.15 }, data: xs.map((x, k) => [x, ys[k]]) };
       });
       return option;
     }
@@ -153,7 +175,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       option.legend = { show: samples.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: samples.map(s => s.name) };
       option.series = samples.map((s, i) => {
         const sorted = [...s.values].sort((a, b) => a - b);
-        return { name: s.name, type: 'line', step: 'start', symbol: 'none', lineStyle: { color: color[i % color.length] },
+        return { name: s.name, type: 'line', step: 'start', symbol: 'none', lineStyle: { color: colorForName(s.name, color) },
           data: sorted.map((v, k) => [v, (k + 1) / sorted.length]) };
       });
       return option;
@@ -222,7 +244,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.series = samples.map((s, i) => {
       const jitter = type === 'beeswarm' ? beeswarmOffsets(s.values) : s.values.map(() => 0);
       return { name: s.name, type: 'scatter', symbolSize: 8,
-        itemStyle: { color: color[i % color.length], opacity: type === 'strip_plot' ? 0.55 : 0.85 },
+        itemStyle: { color: colorForName(s.name, color), opacity: type === 'strip_plot' ? 0.55 : 0.85 },
         data: s.values.map((v, k) => [i + jitter[k]!, v]) };
     });
     return option;
@@ -233,9 +255,9 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     const targets = payload.series as TargetSeries[];
     const n = targets.length;
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
       legend: { show: false },
     };
@@ -244,7 +266,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
         type: 'gauge', center: [`${((i + 0.5) / n) * 100}%`, '58%'], radius: `${Math.min(42, 85 / n)}%`,
         min: g.min ?? 0, max: g.max ?? 100,
         progress: { show: true, width: 10 },
-        axisLine: { lineStyle: { width: 10, color: [[1, color[i % color.length]]] } },
+        axisLine: { lineStyle: { width: 10, color: [[1, colorForName(g.name, color)]] } },
         pointer: { show: true, length: '55%', itemStyle: { color: text } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
         title: { show: true, offsetCenter: [0, '70%'], color: text, fontSize: 12 },
@@ -261,7 +283,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       option.yAxis = { type: 'category', data: targets.map(p => p.name), axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
       option.series = targets.map((p, i) => {
         const max = p.max ?? 100;
-        return { name: p.name, type: 'bar', barWidth: 14, itemStyle: { color: color[i % color.length], borderRadius: 4 },
+        return { name: p.name, type: 'bar', barWidth: 14, itemStyle: { color: colorForName(p.name, color), borderRadius: 4 },
           data: targets.map((_, r) => (r === i ? p.value : null)),
           markArea: { silent: true, data: [[
             { xAxis: 0, yAxis: i - 0.35, itemStyle: { color: grid, opacity: 0.2 } },
@@ -288,7 +310,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
         { name: `${b.name} base`, type: 'bar', stack: `bullet-${i}`, stackStrategy: 'all', barWidth: 10,
           itemStyle: { opacity: 0 }, data: targets.map((_, r) => (r === i ? min : null)), tooltip: { show: false }, silent: true },
         { name: b.name, type: 'bar', stack: `bullet-${i}`, stackStrategy: 'all', barWidth: 10,
-          itemStyle: { color: color[i % color.length] },
+          itemStyle: { color: colorForName(b.name, color) },
           data: targets.map((_, r) => (r === i ? b.value - min : null)),
           markArea: { silent: true, data: markAreaData },
           ...(markPointData.length ? { markPoint: { symbol: 'rect', symbolSize: [3, 20],
@@ -309,9 +331,9 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     const largest = Math.max(...values.map(Math.abs));
     const base = hexToRgb(color[0]!);
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
       legend: { show: false },
       xAxis: { type: 'category', data: xs, axisLabel: { color: text } },
@@ -329,9 +351,9 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     const up = color[0]!, down = color[1] ?? '#ef4444';
     const hasVolume = ohlc.some(s => s.points.some(p => p.volume !== undefined));
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: 'axis', renderMode: 'richText', confine: true },
       legend: { show: ohlc.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: ohlc.map(s => s.name) },
       xAxis: { type: 'category', data: cats, axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } },
@@ -363,11 +385,11 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     // Validated to always be the flat {name, low, high, group?} shape.
     const items = payload.series as IntervalItem[];
     const groups = [...new Set(items.map(it => it.group).filter((g): g is string => g !== undefined))];
-    const colorFor = (it: IntervalItem, i: number) => (it.group ? color[groups.indexOf(it.group) % color.length]! : color[i % color.length]!);
+    const colorFor = (it: IntervalItem) => colorForName(it.group ?? it.name, color);
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
       legend: { show: groups.length > 0, type: 'scroll', bottom: 0, textStyle: { color: text }, data: groups },
       xAxis: { type: 'value', name: payload.x_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } },
@@ -376,13 +398,13 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.series = items.flatMap((it, i): Record<string, unknown>[] => {
       // A zero-duration row is a milestone: a marker, not a bar.
       if (it.low === it.high) return [{ name: it.group ?? it.name, type: 'scatter', symbol: 'diamond',
-        symbolSize: 14, itemStyle: { color: colorFor(it, i) }, data: [[it.low, i]] }];
+        symbolSize: 14, itemStyle: { color: colorFor(it) }, data: [[it.low, i]] }];
       return [
         // Same invisible-base-plus-span trick used throughout this file.
         { name: `${it.name} base`, type: 'bar', stack: `gantt-${i}`, stackStrategy: 'all', barWidth: 14,
           itemStyle: { opacity: 0 }, data: items.map((_, r) => (r === i ? it.low : null)), tooltip: { show: false }, silent: true },
         { name: it.group ?? it.name, type: 'bar', stack: `gantt-${i}`, stackStrategy: 'all', barWidth: 14,
-          itemStyle: { color: colorFor(it, i) }, data: items.map((_, r) => (r === i ? it.high - it.low : null)) },
+          itemStyle: { color: colorFor(it) }, data: items.map((_, r) => (r === i ? it.high - it.low : null)) },
       ];
     });
     return option;
@@ -393,9 +415,9 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     // matches ours exactly, so there is nothing to transform.
     const nodes = payload.series as HierarchyNode[];
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
       legend: { show: false },
     };
@@ -418,9 +440,9 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     const g = payload.series[0] as GraphSeries;
     const nameOf = new Map(g.nodes.map(n => [n.id, n.name ?? n.id]));
     const option: echarts.EChartsCoreOption = {
-      animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      animation: !reducedMotion,
       backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-      aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+      aria: { enabled: true, decal: { show: patterns } },
       tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
     };
     if (type === 'sankey') {
@@ -460,9 +482,9 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
   // Minimal trend indicator: same series as line/area, axes and legend hidden.
   const sparkline = type === 'sparkline';
   const option: echarts.EChartsCoreOption = {
-    animation: !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+    animation: !reducedMotion,
     backgroundColor: 'transparent', color, textStyle: { color: text, fontFamily: 'system-ui, sans-serif' },
-    aria: { enabled: true, decal: { show: payload.theme === 'high_contrast' } },
+    aria: { enabled: true, decal: { show: patterns } },
     tooltip: { trigger: pie || funnel || type === 'scatter' || type === 'scatter_trend' || type === 'bubble' || type === 'waffle' || type === 'radar' || type === 'polar_bar' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     legend: { show: !sparkline && (pie || funnel || series.length > 1), type: 'scroll', bottom: 0, textStyle: { color: text } },
     grid: sparkline ? { left: 2, right: 2, top: 2, bottom: 2 } : { left: 60, right: 24, top: 24, bottom: 65, containLabel: true },
@@ -494,7 +516,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.series = names.map((name, i) => {
       const cells: [number, number][] = [];
       for (let k = 0; k < counts[i]!; k++, cursor++) cells.push([cursor % cols, Math.floor(cursor / cols)]);
-      return { name, type: 'scatter', symbol: 'rect', symbolSize: 16, itemStyle: { color: color[i % color.length] }, data: cells };
+      return { name, type: 'scatter', symbol: 'rect', symbolSize: 16, itemStyle: { color: colorForName(name, color) }, data: cells };
     });
     return option;
   }
@@ -513,7 +535,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     option.yAxis = { type: 'value', name: payload.y_label, axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
     option.legend = { show: bubbles.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: bubbles.map(b => b.name) };
     option.series = bubbles.map((b, i) => ({ name: b.name, type: 'scatter',
-      itemStyle: { color: color[i % color.length], opacity: 0.7 },
+      itemStyle: { color: colorForName(b.name, color), opacity: 0.7 },
       data: b.points.map(p => ({ value: [p.x, p.y], symbolSize: diameter(p.size) })) }));
     return option;
   }
@@ -525,10 +547,10 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       axisName: { color: text }, splitLine: { lineStyle: { color: grid } }, axisLine: { lineStyle: { color: grid } },
       splitArea: { show: false } };
     option.legend = { show: series.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: series.map(s => s.name) };
-    option.series = [{ type: 'radar', data: series.map((s, i) => ({ name: s.name,
+    option.series = [{ type: 'radar', data: series.map(s => ({ name: s.name,
       value: categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? 0),
-      itemStyle: { color: color[i % color.length] }, lineStyle: { color: color[i % color.length] },
-      areaStyle: { color: color[i % color.length], opacity: 0.12 } })) }];
+      itemStyle: { color: colorForName(s.name, color) }, lineStyle: { color: colorForName(s.name, color) },
+      areaStyle: { color: colorForName(s.name, color), opacity: 0.12 } })) }];
     return option;
   }
   if (type === 'polar_bar') {
@@ -539,8 +561,8 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       axisLabel: { color: text }, axisLine: { lineStyle: { color: grid } } };
     (option as Record<string, unknown>).radiusAxis = { type: 'value', axisLabel: { color: text }, splitLine: { lineStyle: { color: grid } } };
     option.legend = { show: series.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: series.map(s => s.name) };
-    option.series = series.map((s, i) => ({ name: s.name, type: 'bar', coordinateSystem: 'polar',
-      itemStyle: { color: color[i % color.length] },
+    option.series = series.map(s => ({ name: s.name, type: 'bar', coordinateSystem: 'polar',
+      itemStyle: { color: colorForName(s.name, color) },
       data: categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? null) }));
     return option;
   }
@@ -587,7 +609,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
         { name: `${b.name} (base)`, type: 'line', stack: `range-${i}`, stackStrategy: 'all', symbol: 'none',
           lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, data: base, encode: { x: 0, y: 1 }, tooltip: { show: false }, silent: true },
         { name: b.name, type: 'line', stack: `range-${i}`, stackStrategy: 'all', symbol: 'none',
-          lineStyle: { opacity: 0 }, areaStyle: { color: color[i % color.length], opacity: 0.22 }, data: span,
+          lineStyle: { opacity: 0 }, areaStyle: { color: colorForName(b.name, color), opacity: 0.22 }, data: span,
           dimensions: ['Category', 'Span', 'Low', 'High'], encode: { x: 0, y: 1, tooltip: [2, 3] } },
       ];
     });
@@ -608,8 +630,8 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
         { name: `${b.name} (whisker base)`, type: 'bar', stack: `error-${i}`, stackStrategy: 'all', barWidth: 2,
           itemStyle: { opacity: 0 }, data: base, tooltip: { show: false }, silent: true },
         { name: `${b.name} (whisker)`, type: 'bar', stack: `error-${i}`, stackStrategy: 'all', barWidth: 2,
-          itemStyle: { color: color[i % color.length], opacity: 0.6 }, data: span, tooltip: { show: false }, silent: true },
-        { name: b.name, type: 'scatter', symbolSize: 10, itemStyle: { color: color[i % color.length] }, data: center },
+          itemStyle: { color: colorForName(b.name, color), opacity: 0.6 }, data: span, tooltip: { show: false }, silent: true },
+        { name: b.name, type: 'scatter', symbolSize: 10, itemStyle: { color: colorForName(b.name, color) }, data: center },
       ];
     });
     return option;
@@ -626,8 +648,8 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
       // The connecting stem: same invisible-base-plus-band trick as range_area.
       { name: 'stem-base', type: 'bar', stack: 'dumbbell', stackStrategy: 'all', barWidth: 2, itemStyle: { opacity: 0 }, data: low, tooltip: { show: false }, silent: true },
       { name: 'stem', type: 'bar', stack: 'dumbbell', stackStrategy: 'all', barWidth: 2, itemStyle: { color: grid, opacity: 0.8 }, data: span, tooltip: { show: false }, silent: true },
-      { name: a.name, type: 'scatter', symbolSize: 12, itemStyle: { color: color[0] }, data: va },
-      { name: b.name, type: 'scatter', symbolSize: 12, itemStyle: { color: color[1 % color.length] }, data: vb },
+      { name: a.name, type: 'scatter', symbolSize: 12, itemStyle: { color: colorForName(a.name, color) }, data: va },
+      { name: b.name, type: 'scatter', symbolSize: 12, itemStyle: { color: colorForName(b.name, color) }, data: vb },
     ];
     return option;
   }
@@ -687,7 +709,7 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     // the ordinary line/area shape — no new data model, just a transform.
     option.legend = { show: series.length > 1, type: 'scroll', bottom: 0, textStyle: { color: text }, data: series.map(s => s.name) };
     option.yAxis = { ...valueAxis, axisLabel: { ...valueAxis.axisLabel, formatter: '{value}%' } };
-    option.series = series.map((s, i) => {
+    option.series = series.map(s => {
       const vals = categories.map(x => s.points.find(p => String(p.x) === x)?.y ?? null);
       let state = type === 'drawdown' ? -Infinity : 1; // running peak, or running growth factor
       const transformed = vals.map(v => {
@@ -695,8 +717,8 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
         if (type === 'drawdown') { state = Math.max(state, v); return state > 0 ? ((v - state) / state) * 100 : 0; }
         state *= 1 + v; return (state - 1) * 100;
       });
-      return { name: s.name, type: 'line', lineStyle: { color: color[i % color.length] },
-        areaStyle: type === 'drawdown' ? { color: color[i % color.length], opacity: 0.25 } : undefined,
+      return { name: s.name, type: 'line', lineStyle: { color: colorForName(s.name, color) },
+        areaStyle: type === 'drawdown' ? { color: colorForName(s.name, color), opacity: 0.25 } : undefined,
         data: transformed };
     });
     return option;
@@ -717,9 +739,14 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
   option.series = series.map((s, i) => ({ name: s.name,
     type: type === 'scatter' || type === 'scatter_trend' ? 'scatter' : type.includes('bar') ? 'bar' : 'line',
     ...(type.startsWith('stacked_') ? { stack: 'total' } : {}),
-    ...(type.includes('area') ? { areaStyle: { opacity: 0.22 } } : {}),
+    ...(type.includes('area') ? { areaStyle: { color: colorForName(s.name, color), opacity: 0.22 } } : {}),
     ...(type === 'step_line' ? { step: 'start' } : {}),
-    lineStyle: { type: ['solid', 'dashed', 'dotted'][i % 3] }, symbol: sparkline ? 'none' : ['circle', 'rect', 'triangle', 'diamond'][i % 4],
+    // Dash pattern and symbol shape stay index-based: they exist precisely
+    // so two lines are told apart without relying on color (WCAG 2.2 AA),
+    // so cycling them is correct even though the color itself is now stable.
+    itemStyle: { color: colorForName(s.name, color) },
+    lineStyle: { type: ['solid', 'dashed', 'dotted'][i % 3], color: colorForName(s.name, color) },
+    symbol: sparkline ? 'none' : ['circle', 'rect', 'triangle', 'diamond'][i % 4],
     data: (type === 'scatter' || type === 'scatter_trend') ? s.points.map((p, index) => [typeof p.x === 'number' ? p.x : index, p.y]) : data[i],
   }));
   if (type === 'scatter_trend') {
@@ -744,6 +771,40 @@ export function chartOption(payload: ChatChartPresentation, dark = false): echar
     }
   }
   return option;
+}
+const DENSITY_SCALE: Record<string, number> = { compact: 0.82, comfortable: 1, presentation: 1.25 };
+const BASE_FONT_SIZE = 12;
+/**
+ * Density scales spacing and label size only — it never adds, removes or
+ * reorders data. Applied as a post-process over the already-built option
+ * (rather than threaded through every chart_type branch above) so every
+ * branch is untouched when density is absent — the default, and every
+ * payload before this feature existed.
+ */
+function applyDensity(option: echarts.EChartsCoreOption, density: Density | undefined): echarts.EChartsCoreOption {
+  const scale = DENSITY_SCALE[density ?? 'comfortable']!;
+  if (scale === 1) return option;
+  const opt = option as Record<string, unknown>;
+  const grid = opt.grid;
+  if (grid && typeof grid === 'object' && !Array.isArray(grid)) {
+    const g = grid as Record<string, unknown>;
+    for (const key of ['left', 'right', 'top', 'bottom'] as const) {
+      if (typeof g[key] === 'number') g[key] = Math.round((g[key] as number) * scale);
+    }
+  }
+  const textStyle = opt.textStyle;
+  if (textStyle && typeof textStyle === 'object') (textStyle as Record<string, unknown>).fontSize = Math.round(BASE_FONT_SIZE * scale);
+  const legend = opt.legend;
+  if (legend && typeof legend === 'object' && !Array.isArray(legend)) {
+    const legendTextStyle = (legend as Record<string, unknown>).textStyle;
+    if (legendTextStyle && typeof legendTextStyle === 'object') {
+      (legendTextStyle as Record<string, unknown>).fontSize = Math.round(BASE_FONT_SIZE * scale);
+    }
+  }
+  return option;
+}
+export function chartOption(payload: ChatChartPresentation, dark = false): echarts.EChartsCoreOption {
+  return applyDensity(chartOptionImpl(payload, dark), payload.density);
 }
 export function mountChatChart(container: HTMLElement, raw: unknown) {
   const payload = validateChatChart(raw);
