@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { GridComponent, LegendComponent, MarkLineComponent, MarkPointComponent, TitleComponent, TooltipComponent } from "echarts/components";
@@ -17,6 +17,9 @@ echarts.use([
   MarkLineComponent, MarkPointComponent,
   CanvasRenderer,
 ]);
+
+// Portable charts load the expanded engine only when a document uses that format.
+const PortableChart = lazy(() => import('../chat/react.js').then(module => ({ default: module.ChatChart })));
 
 let interactionCounter = 0;
 
@@ -179,6 +182,13 @@ function ChartComponent({ spec, results, bindings, stale, emit, block }: Rendere
 
 export const echartsRenderer: RendererDefinition<EChartsSpec> = {
   ...echartsContract,
-  Component: ChartComponent,
+  Component: (props) => props.spec.presentation
+    ? <div data-workplane="chart" data-state={props.stale ? 'stale' : 'ready'}>
+        <Suspense fallback={<p role="status">Loading chart…</p>}>
+          <PortableChart payload={props.spec.presentation} />
+        </Suspense>
+        <details><summary>Chart data</summary><pre>{JSON.stringify(props.spec.presentation.series, null, 2)}</pre></details>
+      </div>
+    : <ChartComponent {...props} />,
 };
 

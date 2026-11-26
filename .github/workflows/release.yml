@@ -1,0 +1,41 @@
+name: Release package archive
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bahulam/workplane-ui run build
+      - name: Pack distributable archive
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./packages/workplane-ui/package.json').version")"
+          mkdir -p artifacts
+          npm pack ./packages/workplane-ui --pack-destination artifacts
+          mv "artifacts/bahulam-workplane-ui-${version}.tgz" "artifacts/workplane-ui-${version}.tgz"
+          sha256sum "artifacts/workplane-ui-${version}.tgz" > "artifacts/workplane-ui-${version}.tgz.sha256"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub release and attach package
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "@bahulam/workplane-ui v${{ steps.pack.outputs.version }}"
+          generate_release_notes: true
+          files: |
+            artifacts/workplane-ui-${{ steps.pack.outputs.version }}.tgz
+            artifacts/workplane-ui-${{ steps.pack.outputs.version }}.tgz.sha256

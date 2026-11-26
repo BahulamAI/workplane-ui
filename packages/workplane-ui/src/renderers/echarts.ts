@@ -7,6 +7,7 @@ import {
   type SpecViolation,
 } from "../core/index.js";
 import type { JsonValue } from "../protocol/index.js";
+import { CHART_TYPES, validateChatChart, type ChatChartPresentation } from "../chat/contract.js";
 import type { RendererContract, ValidationOutcome } from "./contract.js";
 
 /**
@@ -151,6 +152,8 @@ export interface DataBinding {
 }
 
 export interface EChartsSpec {
+  /** Portable chart shared with chat; legacy option/bind documents remain supported. */
+  presentation?: ChatChartPresentation;
   /** Validated ECharts option. Unknown keys have been dropped. */
   option: Record<string, JsonValue>;
   /** Absent for a chart whose data is written inline in the option. */
@@ -298,6 +301,14 @@ function fromSimpleShape(raw: Record<string, JsonValue>): unknown | { error: str
 
 export function validateEChartsSpec(spec: unknown): ValidationOutcome<EChartsSpec> {
   if (!isObject(spec)) return fail("Spec must be an object");
+  if (spec.presentation !== undefined) {
+    if (Object.keys(spec).some((key) => key !== "presentation")) {
+      return fail("A portable presentation cannot be mixed with option or query bindings");
+    }
+    const presentation = validateChatChart(spec.presentation);
+    if (!presentation) return fail("Invalid portable chart presentation", "/presentation");
+    return { ok: true, value: { presentation, option: {}, selectionMode: "none", dropped: [] } };
+  }
 
   // Accept the pre-envelope shape by compiling it, rather than breaking every
   // document that already uses it.
@@ -390,6 +401,7 @@ export function validateEChartsSpec(spec: unknown): ValidationOutcome<EChartsSpe
 }
 
 export function summarizeEChartsSpec(spec: EChartsSpec): string {
+  if (spec.presentation) return `${spec.presentation.chart_type} chart (portable inline data)`;
   // series is `orSingle`: a single-series chart may arrive as one object.
   // Reading it as an array only would report "0 series" for every donut.
   const raw = spec.option.series;
@@ -401,6 +413,7 @@ export function summarizeEChartsSpec(spec: EChartsSpec): string {
 /** What this adapter accepts, for catalog discovery by an agent. */
 export function echartsSpecShape(): string {
   return (
+    `{ presentation: <workplane.chat-chart/1 payload> } supports: ${CHART_TYPES.join(", ")}. Or legacy ` +
     "{ option: <ECharts option>, bind?: { queryId, categoryColumn?, series: [{ index, valueColumn, entityColumn? }] }, " +
     "entityType?, selectionMode?: none|highlight|filter, selectionPath? }\n" +
     `option accepts: ${describeKeyTree(ECHARTS_ALLOW)}`
@@ -421,7 +434,8 @@ export const echartsContract: RendererContract<EChartsSpec> = {
     requiresWebGL: false,
   },
   purpose:
-    "Charts: bar, line, pie, donut, stacked, multi-series. The `option` field is an ECharts " +
+    `All 50 portable core chart types use { presentation: <chat chart payload> }; discover types and shapes via the chart catalogue. Legacy charts: bar, line, pie, donut, stacked, multi-series.` +
+    " The `option` field is an ECharts " +
     "option object. series/xAxis/yAxis each accept one object or an array. Multiple lines must " +
     "differ by lineStyle.type or symbol, not colour alone.",
   example: {
